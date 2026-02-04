@@ -2,6 +2,8 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
+const SETTINGS_FILE = path.join(__dirname, 'settings.json');
+
 function createWindow() {
   const mainWindow = new BrowserWindow({
     width: 1200,
@@ -64,4 +66,26 @@ ipcMain.handle('app:getDefaultImage', () => {
     return defaultPath;
   }
   return null;
+});
+
+ipcMain.handle('settings:load', async () => {
+    try {
+        if (fs.existsSync(SETTINGS_FILE)) {
+            const data = fs.readFileSync(SETTINGS_FILE, 'utf-8');
+            return JSON.parse(data);
+        }
+    } catch (error) {
+        console.error('Failed to load settings:', error);
+    }
+    return null;
+});
+
+ipcMain.handle('settings:save', async (event, settings) => {
+    try {
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 4));
+        return true;
+    } catch (error) {
+        console.error('Failed to save settings:', error);
+        return false;
+    }
 });
