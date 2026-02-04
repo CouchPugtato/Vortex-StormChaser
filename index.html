@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Field Mapper</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="canvas-container" id="canvasContainer">
+            <canvas id="fieldCanvas"></canvas>
+        </div>
+
+        <div class="sidebar">
+            <div class="header">
+                <h2>Field Mapper</h2>
+            </div>
+
+            <div class="controls-section">
+                <button id="btnLoad" class="btn">Load Image</button>
+                <div id="status" class="status-text">Loading...</div>
+            </div>
+
+            <div class="controls-section">
+                <button id="btnToggleCrop" class="btn">Change Crop</button>
+                
+                <div id="cropSliders" class="hidden">
+                    <div class="slider-group">
+                        <label>Left: <span id="valLeft">0</span></label>
+                        <input type="range" id="sliderLeft" min="0" max="100" value="0">
+                    </div>
+                    
+                    <div class="slider-group">
+                        <label>Right: <span id="valRight">100</span></label>
+                        <input type="range" id="sliderRight" min="0" max="100" value="100">
+                    </div>
+                    
+                    <div class="slider-group">
+                        <label>Top: <span id="valTop">0</span></label>
+                        <input type="range" id="sliderTop" min="0" max="100" value="0">
+                    </div>
+                    
+                    <div class="slider-group">
+                        <label>Bottom: <span id="valBottom">100</span></label>
+                        <input type="range" id="sliderBottom" min="0" max="100" value="100">
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls-section points-section">
+                <h3>Points</h3>
+                <div class="info-text">Origin: Bottom-Left (0,0)</div>
+                <div class="info-text">Max: (16.541, 8.067)</div>
+                
+                <ul id="pointsList" class="points-list">
+                </ul>
+            </div>
+
+            <div class="footer-buttons">
+                <button id="btnExport" class="btn">Export JSON</button>
+                <button id="btnClear" class="btn btn-danger">Clear All</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>
