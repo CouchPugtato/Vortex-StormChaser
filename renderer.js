@@ -1,14 +1,8 @@
 const canvas = document.getElementById('fieldCanvas');
 const ctx = canvas.getContext('2d');
 
-const btnLoad = document.getElementById('btnLoad');
-const btnExport = document.getElementById('btnExport');
-const btnClear = document.getElementById('btnClear');
-const btnToggleCrop = document.getElementById('btnToggleCrop');
 const cropSlidersDiv = document.getElementById('cropSliders');
-const btnToggleRobot = document.getElementById('btnToggleRobot');
 const robotSettingsDiv = document.getElementById('robotSettings');
-const statusDiv = document.getElementById('status');
 const pointsList = document.getElementById('pointsList');
 
 const sliders = {
@@ -65,42 +59,54 @@ const btnPlay = document.getElementById('btnPlay');
     const defaultPath = await window.electronAPI.getDefaultImage();
     if (defaultPath) {
         loadImage(defaultPath);
-    } else {
-        statusDiv.innerText = "Ready to load image.";
     }
+
+    window.electronAPI.onMenuCommand(async (command, payload) => {
+        switch (command) {
+            case 'open-image':
+                if (payload) loadImage(payload);
+                break;
+            case 'export-path':
+                if (points.length === 0) return;
+                const exportData = points.map((p, i) => {
+                    const coords = getFieldCoordinates(p.x, p.y);
+                    return {
+                        id: i + 1,
+                        x: Number(coords.x.toFixed(4)),
+                        y: Number(coords.y.toFixed(4)),
+                        rotation: Number((p.rotation * 180 / Math.PI).toFixed(2))
+                    };
+                });
+                const success = await window.electronAPI.saveFile(JSON.stringify(exportData, null, 4));
+                if (success) alert('Points exported successfully!');
+                break;
+            case 'toggle-crop':
+                const isCropHidden = cropSlidersDiv.classList.contains('hidden');
+                if (isCropHidden) {
+                    cropSlidersDiv.classList.remove('hidden');
+                } else {
+                    cropSlidersDiv.classList.add('hidden');
+                    saveSettings();
+                }
+                draw();
+                break;
+            case 'toggle-robot':
+                const isRobotHidden = robotSettingsDiv.classList.contains('hidden');
+                if (isRobotHidden) {
+                    robotSettingsDiv.classList.remove('hidden');
+                } else {
+                    robotSettingsDiv.classList.add('hidden');
+                    saveSettings();
+                }
+                break;
+            case 'clear-points':
+                points = [];
+                draw();
+                updatePointsList();
+                break;
+        }
+    });
 })();
-
-btnLoad.addEventListener('click', async () => {
-    const filePath = await window.electronAPI.openFile();
-    if (filePath) {
-        loadImage(filePath);
-    }
-});
-
-btnToggleCrop.addEventListener('click', () => {
-    const isHidden = cropSlidersDiv.classList.contains('hidden');
-    if (isHidden) {
-        cropSlidersDiv.classList.remove('hidden');
-        btnToggleCrop.innerText = "Hide Crop Controls";
-    } else {
-        cropSlidersDiv.classList.add('hidden');
-        btnToggleCrop.innerText = "Change Crop";
-        saveSettings();
-    }
-    draw();
-});
-
-btnToggleRobot.addEventListener('click', () => {
-    const isHidden = robotSettingsDiv.classList.contains('hidden');
-    if (isHidden) {
-        robotSettingsDiv.classList.remove('hidden');
-        btnToggleRobot.innerText = "Hide Robot Settings";
-    } else {
-        robotSettingsDiv.classList.add('hidden');
-        btnToggleRobot.innerText = "Robot Settings";
-        saveSettings();
-    }
-});
 
 Object.keys(robotInputs).forEach(key => {
     robotInputs[key].addEventListener('input', (e) => {
@@ -111,31 +117,6 @@ Object.keys(robotInputs).forEach(key => {
             saveSettings();
         }
     });
-});
-
-btnExport.addEventListener('click', async () => {
-    if (points.length === 0) return;
-    
-    const exportData = points.map((p, i) => {
-        const coords = getFieldCoordinates(p.x, p.y);
-        return {
-            id: i + 1,
-            x: Number(coords.x.toFixed(4)),
-            y: Number(coords.y.toFixed(4)),
-            rotation: Number((p.rotation * 180 / Math.PI).toFixed(2))
-        };
-    });
-
-    const success = await window.electronAPI.saveFile(JSON.stringify(exportData, null, 4));
-    if (success) {
-        alert('Points exported successfully!');
-    }
-});
-
-btnClear.addEventListener('click', () => {
-    points = [];
-    draw();
-    updatePointsList();
 });
 
 canvas.addEventListener('mousedown', (e) => {
@@ -363,7 +344,6 @@ function loadImage(src) {
         
         draw();
         updatePointsList();
-        statusDiv.innerText = `Loaded: ${src.split(/[\\/]/).pop()}`;
     };
     img.src = src;
 }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -15,6 +15,57 @@ function createWindow() {
       nodeIntegration: false
     }
   });
+
+  const menuTemplate = [
+    {
+      label: 'File',
+      submenu: [
+        {
+          label: 'Open Field Image...',
+          click: async () => {
+             const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+                properties: ['openFile'],
+                filters: [{ name: 'Images', extensions: ['jpg', 'png', 'gif', 'bmp', 'jpeg'] }]
+             });
+             if (!canceled && filePaths.length > 0) {
+                 mainWindow.webContents.send('menu:open-image', filePaths[0]);
+             }
+          }
+        },
+        {
+          label: 'Export Path...',
+          click: () => mainWindow.webContents.send('menu:export-path')
+        },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    },
+    {
+        label: 'Settings',
+        submenu: [
+            {
+                label: 'Toggle Crop Controls',
+                click: () => mainWindow.webContents.send('menu:toggle-crop')
+            },
+            {
+                label: 'Toggle Robot Settings',
+                click: () => mainWindow.webContents.send('menu:toggle-robot')
+            }
+        ]
+    },
+    {
+        label: 'Edit',
+        submenu: [
+            {
+                label: 'Clear All Points',
+                click: () => mainWindow.webContents.send('menu:clear-points')
+            }
+        ]
+    }
+  ];
+
+  const menu = Menu.buildFromTemplate(menuTemplate);
+  Menu.setApplicationMenu(menu);
 
   mainWindow.loadFile('index.html');
 }
