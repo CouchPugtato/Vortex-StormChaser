@@ -84,7 +84,7 @@ canvas {
     display: none;
 }
 
-#cropSliders {
+#cropSliders, #robotSettings {
     margin-top: 10px;
     padding: 10px;
     background: #1a1a1a;
@@ -92,14 +92,30 @@ canvas {
     border-radius: 4px;
 }
 
-.slider-group {
+.slider-group, .input-group {
     margin-bottom: 8px;
 }
 
-.slider-group label {
+.slider-group label, .input-group label {
     display: block;
-    font-size: 0.9em;
-    margin-bottom: 2px;
+    font-size: 0.85em;
+    color: #ccc;
+    margin-bottom: 3px;
+}
+
+.input-group input[type="number"] {
+    width: 100%;
+    background: #222;
+    border: 1px solid #444;
+    color: #fff;
+    padding: 5px;
+    border-radius: 3px;
+    box-sizing: border-box;
+}
+
+.input-group input[type="number"]:focus {
+    outline: none;
+    border-color: #cc0000;
 }
 
 input[type=range] {

@@ -6,6 +6,8 @@ const btnExport = document.getElementById('btnExport');
 const btnClear = document.getElementById('btnClear');
 const btnToggleCrop = document.getElementById('btnToggleCrop');
 const cropSlidersDiv = document.getElementById('cropSliders');
+const btnToggleRobot = document.getElementById('btnToggleRobot');
+const robotSettingsDiv = document.getElementById('robotSettings');
 const statusDiv = document.getElementById('status');
 const pointsList = document.getElementById('pointsList');
 
@@ -14,6 +16,12 @@ const sliders = {
     right: document.getElementById('sliderRight'),
     top: document.getElementById('sliderTop'),
     bottom: document.getElementById('sliderBottom')
+};
+
+const robotInputs = {
+    width: document.getElementById('robotWidth'),
+    height: document.getElementById('robotHeight'),
+    bumper: document.getElementById('robotBumper')
 };
 
 const valLabels = {
@@ -30,9 +38,19 @@ let fieldConstants = {
     height: 8.067
 };
 
+const METERS_PER_INCH = 0.0254;
+
+let robotSettings = {
+    width: 28 * METERS_PER_INCH,
+    height: 28 * METERS_PER_INCH,
+    bumper: 3 * METERS_PER_INCH
+};
+
 let isUpdatingSliders = false;
 let saveSettingsTimeout = null;
 let isDraggingCrop = false;
+let isDraggingPoint = false;
+let draggingPointIndex = -1;
 let dragStart = { x: 0, y: 0 };
 
 (async () => {
@@ -62,6 +80,29 @@ btnToggleCrop.addEventListener('click', () => {
         saveSettings();
     }
     draw();
+});
+
+btnToggleRobot.addEventListener('click', () => {
+    const isHidden = robotSettingsDiv.classList.contains('hidden');
+    if (isHidden) {
+        robotSettingsDiv.classList.remove('hidden');
+        btnToggleRobot.innerText = "Hide Robot Settings";
+    } else {
+        robotSettingsDiv.classList.add('hidden');
+        btnToggleRobot.innerText = "Robot Settings";
+        saveSettings();
+    }
+});
+
+Object.keys(robotInputs).forEach(key => {
+    robotInputs[key].addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        if (!isNaN(val) && val > 0) {
+            robotSettings[key] = val * METERS_PER_INCH;
+            draw();
+            saveSettings();
+        }
+    });
 });
 
 btnExport.addEventListener('click', async () => {
@@ -122,17 +163,39 @@ canvas.addEventListener('mousedown', (e) => {
         const imgY = crop.y + (mouseY / scaleY);
         
         if (e.button === 0) {
-            addPoint(imgX, imgY);
+            const closestIdx = findClosestPointIndex(imgX, imgY);
+            if (closestIdx !== -1) {
+                isDraggingPoint = true;
+                draggingPointIndex = closestIdx;
+            } else {
+                addPoint(imgX, imgY);
+            }
         }
     }
 });
 
 window.addEventListener('mousemove', (e) => {
-    if (!isDraggingCrop || !currentImage) return;
+    if ((!isDraggingCrop && !isDraggingPoint) || !currentImage) return;
 
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
+
+    if (isDraggingPoint) {
+        const crop = getCropRect();
+        const scaleX = canvas.width / crop.w;
+        const scaleY = canvas.height / crop.h;
+        
+        const imgX = crop.x + (mouseX / scaleX);
+        const imgY = crop.y + (mouseY / scaleY);
+
+        points[draggingPointIndex].x = imgX;
+        points[draggingPointIndex].y = imgY;
+        
+        draw();
+        updatePointsList();
+        return;
+    }
 
     const scale = Math.min(canvas.width / currentImage.width, canvas.height / currentImage.height);
     const w = currentImage.width * scale;
@@ -163,6 +226,8 @@ window.addEventListener('mousemove', (e) => {
 
 window.addEventListener('mouseup', () => {
     isDraggingCrop = false;
+    isDraggingPoint = false;
+    draggingPointIndex = -1;
 });
 
 canvas.addEventListener('contextmenu', (e) => {
@@ -205,12 +270,22 @@ function loadImage(src) {
         sliders.bottom.max = img.height;
         
         const settings = await window.electronAPI.loadSettings();
-        if (settings && settings.crop) {
-            sliders.left.value = settings.crop.left;
-            sliders.right.value = settings.crop.right;
-            sliders.top.value = settings.crop.top;
-            sliders.bottom.value = settings.crop.bottom;
-            console.log("Loaded settings:", settings);
+        if (settings) {
+            if (settings.crop) {
+                sliders.left.value = settings.crop.left;
+                sliders.right.value = settings.crop.right;
+                sliders.top.value = settings.crop.top;
+                sliders.bottom.value = settings.crop.bottom;
+            }
+            if (settings.robot) {
+        robotSettings.width = settings.robot.width || (28 * METERS_PER_INCH);
+        robotSettings.height = settings.robot.height || (28 * METERS_PER_INCH);
+        robotSettings.bumper = settings.robot.bumper || (3 * METERS_PER_INCH);
+        robotInputs.width.value = (robotSettings.width / METERS_PER_INCH).toFixed(1);
+        robotInputs.height.value = (robotSettings.height / METERS_PER_INCH).toFixed(1);
+        robotInputs.bumper.value = (robotSettings.bumper / METERS_PER_INCH).toFixed(1);
+    }
+    console.log("Loaded settings:", settings);
         } else {
             sliders.left.value = 0;
             sliders.right.value = img.width;
@@ -249,6 +324,11 @@ function saveSettings() {
             right: sliders.right.value,
             top: sliders.top.value,
             bottom: sliders.bottom.value
+        },
+        robot: {
+            width: robotSettings.width,
+            height: robotSettings.height,
+            bumper: robotSettings.bumper
         }
     };
     window.electronAPI.saveSettings(settings);
@@ -258,6 +338,29 @@ function addPoint(x, y) {
     points.push({ x, y });
     draw();
     updatePointsList();
+}
+
+function findClosestPointIndex(x, y) {
+    const crop = getCropRect();
+    const scaleX = canvas.width / crop.w;
+    
+    const threshold = 20 / scaleX; 
+
+    let closestIdx = -1;
+    let minDst = Infinity;
+    
+    points.forEach((p, i) => {
+        const dst = Math.sqrt(Math.pow(p.x - x, 2) + Math.pow(p.y - y, 2));
+        if (dst < minDst) {
+            minDst = dst;
+            closestIdx = i;
+        }
+    });
+    
+    if (closestIdx !== -1 && minDst < threshold) {
+        return closestIdx;
+    }
+    return -1;
 }
 
 function deleteClosestPoint(x, y) {
@@ -395,22 +498,49 @@ function draw() {
         const scaleX = canvas.width / crop.w;
         const scaleY = canvas.height / crop.h;
 
+        const pxPerMeterX = canvas.width / fieldConstants.width;
+        const pxPerMeterY = canvas.height / fieldConstants.height;
+        const robotW = robotSettings.width * pxPerMeterX;
+        const robotH = robotSettings.height * pxPerMeterY;
+        const bumperPxX = robotSettings.bumper * pxPerMeterX;
+        const bumperPxY = robotSettings.bumper * pxPerMeterY;
+
         points.forEach((p, i) => {
             if (p.x >= crop.left && p.x <= crop.right && p.y >= crop.top && p.y <= crop.bottom) {
                 const canvasX = (p.x - crop.left) * scaleX;
                 const canvasY = (p.y - crop.top) * scaleY;
 
+                ctx.fillStyle = '#D32F2F';
+                ctx.globalAlpha = 0.7;
+                ctx.fillRect(
+                    canvasX - robotW / 2 - bumperPxX, 
+                    canvasY - robotH / 2 - bumperPxY, 
+                    robotW + 2 * bumperPxX, 
+                    robotH + 2 * bumperPxY
+                );
+                ctx.globalAlpha = 1.0;
+
+                ctx.strokeStyle = '#0000FF';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(canvasX - robotW / 2, canvasY - robotH / 2, robotW, robotH);
+
                 ctx.beginPath();
-                ctx.arc(canvasX, canvasY, 6, 0, 2 * Math.PI);
-                ctx.fillStyle = '#0000FF'; 
-                ctx.fill();
-                ctx.strokeStyle = 'white';
+                ctx.moveTo(canvasX - 5, canvasY);
+                ctx.lineTo(canvasX + 5, canvasY);
+                ctx.moveTo(canvasX, canvasY - 5);
+                ctx.lineTo(canvasX, canvasY + 5);
+                ctx.strokeStyle = '#FF0000';
                 ctx.lineWidth = 2;
                 ctx.stroke();
+
+                ctx.beginPath();
+                ctx.arc(canvasX, canvasY, 2, 0, 2 * Math.PI);
+                ctx.fillStyle = '#FF0000';
+                ctx.fill();
                 
-                ctx.fillStyle = '#0000FF';
+                ctx.fillStyle = '#FF0000';
                 ctx.font = 'bold 14px Arial';
-                ctx.fillText(`P${i + 1}`, canvasX + 10, canvasY - 10);
+                ctx.fillText(`P${i + 1}`, canvasX + robotW / 2 + bumperPxX + 5, canvasY - robotH / 2);
             }
         });
     }
