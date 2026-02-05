@@ -9,11 +9,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   
   listRoutines: () => ipcRenderer.invoke('routines:list'),
-  saveRoutine: (filename, content) => ipcRenderer.invoke('routines:save', filename, content),
+  saveRoutine: (filename, content, imageBase64) => ipcRenderer.invoke('routines:save', filename, content, imageBase64),
   loadRoutine: (filename) => ipcRenderer.invoke('routines:load', filename),
+  deleteRoutine: (filename) => ipcRenderer.invoke('routines:delete', filename),
+
+  getRecentProjects: () => ipcRenderer.invoke('projects:getRecent'),
+  openProject: (path) => ipcRenderer.invoke('projects:open', path),
+  createProject: () => ipcRenderer.invoke('projects:create'),
 
   onMenuCommand: (callback) => {
       ipcRenderer.on('menu:open-image', (e, path) => callback('open-image', path));
+      ipcRenderer.on('menu:open-path', () => callback('open-path'));
       ipcRenderer.on('menu:export-path', () => callback('export-path'));
       ipcRenderer.on('menu:toggle-crop', () => callback('toggle-crop'));
       ipcRenderer.on('menu:toggle-robot', () => callback('toggle-robot'));

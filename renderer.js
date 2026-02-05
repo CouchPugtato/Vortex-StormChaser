@@ -69,6 +69,16 @@ const openPathModal = document.getElementById('openPathModal');
 const pathFileList = document.getElementById('pathFileList');
 const closeModalBtn = document.querySelector('.close-modal');
 
+const deleteConfirmModal = document.getElementById('deleteConfirmModal');
+const btnConfirmDelete = document.getElementById('btnConfirmDelete');
+const btnCancelDelete = document.getElementById('btnCancelDelete');
+let pendingDeleteFilename = null;
+
+const projectStartModal = document.getElementById('projectStartModal');
+const btnNewProject = document.getElementById('btnNewProject');
+const btnOpenExistingProject = document.getElementById('btnOpenExistingProject');
+const recentProjectsList = document.getElementById('recentProjectsList');
+
 let availableEvents = [];
 let editingEventIndex = -1;
 let currentPathName = null;
@@ -80,6 +90,10 @@ function updatePathDisplay() {
 }
 
 (async () => {
+    if (recentProjectsList) {
+        await loadRecentProjects();
+    }
+
     const defaultPath = await window.electronAPI.getDefaultImage();
     if (defaultPath) {
         loadImage(defaultPath);
@@ -89,6 +103,9 @@ function updatePathDisplay() {
         switch (command) {
             case 'open-image':
                 if (payload) loadImage(payload);
+                break;
+            case 'open-path':
+                await openPathDialog();
                 break;
             case 'export-path':
                 if (points.length === 0) return;
@@ -105,7 +122,6 @@ function updatePathDisplay() {
                     events: events
                 };
                 const success = await window.electronAPI.saveFile(JSON.stringify(exportData, null, 4));
-                if (success) alert('Path exported successfully!');
                 break;
             case 'toggle-crop':
                 const isCropHidden = cropSlidersDiv.classList.contains('hidden');
@@ -143,6 +159,8 @@ function updatePathDisplay() {
 })();
 
 function handleProjectLoaded(data) {
+    if (projectStartModal) projectStartModal.classList.add('hidden');
+
     if (data.events && Array.isArray(data.events)) {
         availableEvents = data.events;
     }
@@ -175,14 +193,14 @@ function handleProjectLoaded(data) {
     
     draw();
     updatePointsList();
-    alert(`Project Loaded: ${data.path}\nEvents loaded: ${availableEvents.length}`);
+
+    openPathDialog();
 }
 
 function loadEvents(data) {
     if (Array.isArray(data) && data.every(item => typeof item === 'string')) {
         availableEvents = data;
         updatePointsList(); 
-        alert(`Loaded ${availableEvents.length} event types.`);
     } else {
         alert('Invalid JSON format. Expected an array of strings.');
     }
@@ -517,11 +535,22 @@ if (btnSavePath) {
         };
 
         const filename = name.endsWith('.json') ? name : name + '.json';
-        const success = await window.electronAPI.saveRoutine(filename, JSON.stringify(exportData, null, 4));
+        const imageBase64 = canvas.toDataURL('image/png');
+        const success = await window.electronAPI.saveRoutine(filename, JSON.stringify(exportData, null, 4), imageBase64);
         if (success) {
             currentPathName = filename;
             updatePathDisplay();
-            alert('Path saved successfully!');
+            
+            const originalText = btnSavePath.innerText;
+            const originalColor = btnSavePath.style.backgroundColor;
+            
+            btnSavePath.innerText = "Saved✓";
+            btnSavePath.style.backgroundColor = "#2e7d32";
+            
+            setTimeout(() => {
+                btnSavePath.innerText = originalText;
+                btnSavePath.style.backgroundColor = originalColor;
+            }, 1000);
         } else {
             alert('Failed to save path. Make sure a project is open.');
         }
@@ -529,27 +558,81 @@ if (btnSavePath) {
 }
 
 if (btnOpenPath) {
-    btnOpenPath.addEventListener('click', async () => {
-        const files = await window.electronAPI.listRoutines();
-        pathFileList.innerHTML = '';
-        
-        if (files.length === 0) {
+    btnOpenPath.addEventListener('click', openPathDialog);
+}
+
+async function openPathDialog() {
+    const routines = await window.electronAPI.listRoutines();
+    pathFileList.innerHTML = '';
+    
+    pathFileList.className = 'path-grid';
+    
+    if (routines.length === 0) {
+        pathFileList.className = 'file-list';
+        const li = document.createElement('li');
+        li.innerText = "No routines found.";
+        pathFileList.appendChild(li);
+    } else {
+        routines.forEach(routine => {
             const li = document.createElement('li');
-            li.innerText = "No routines found.";
+            li.className = 'path-card';
+            li.style.position = 'relative';
+
+            li.onclick = async () => {
+                await loadRoutine(routine.name);
+                openPathModal.classList.add('hidden');
+            };
+
+            const img = document.createElement('img');
+            if (routine.imagePath) {
+                img.src = routine.imagePath;
+            } else {
+                img.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+                img.style.backgroundColor = '#333';
+            }
+            
+            const span = document.createElement('span');
+            span.innerText = routine.name.replace('.json', '');
+
+            const deleteBtn = document.createElement('div');
+            deleteBtn.className = 'delete-path-btn';
+            deleteBtn.innerHTML = '&#x2715;';
+            deleteBtn.title = 'Delete Path';
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation();
+                pendingDeleteFilename = routine.name;
+                deleteConfirmModal.classList.remove('hidden');
+            };
+
+            li.appendChild(img);
+            li.appendChild(span);
+            li.appendChild(deleteBtn);
             pathFileList.appendChild(li);
-        } else {
-            files.forEach(file => {
-                const li = document.createElement('li');
-                li.innerText = file;
-                li.onclick = async () => {
-                    await loadRoutine(file);
-                    openPathModal.classList.add('hidden');
-                };
-                pathFileList.appendChild(li);
-            });
+        });
+    }
+    
+    openPathModal.classList.remove('hidden');
+}
+
+if (btnConfirmDelete) {
+    btnConfirmDelete.addEventListener('click', async () => {
+        if (pendingDeleteFilename) {
+            const success = await window.electronAPI.deleteRoutine(pendingDeleteFilename);
+            if (success) {
+                await openPathDialog();
+            } else {
+                alert('Failed to delete routine.');
+            }
+            deleteConfirmModal.classList.add('hidden');
+            pendingDeleteFilename = null;
         }
-        
-        openPathModal.classList.remove('hidden');
+    });
+}
+
+if (btnCancelDelete) {
+    btnCancelDelete.addEventListener('click', () => {
+        deleteConfirmModal.classList.add('hidden');
+        pendingDeleteFilename = null;
     });
 }
 
@@ -1110,14 +1193,80 @@ function animate() {
             while (diff > Math.PI) diff -= 2 * Math.PI;
             
             heading = rot1 + diff * t;
-            
+
             break;
         }
         currentDist += segmentLengths[i];
     }
-    
+
     draw(currentPoint, heading);
     animationRequestId = requestAnimationFrame(animate);
+}
+
+if (btnNewProject) {
+    btnNewProject.onclick = async () => {
+        await window.electronAPI.createProject();
+    };
+}
+
+if (btnOpenExistingProject) {
+    btnOpenExistingProject.onclick = async () => {
+        await window.electronAPI.openProject(null);
+    };
+}
+
+async function loadRecentProjects() {
+    if (!recentProjectsList) return;
+    const projects = await window.electronAPI.getRecentProjects();
+    recentProjectsList.innerHTML = '';
+    
+    if (projects.length === 0) {
+        const li = document.createElement('li');
+        li.innerText = "No recent projects.";
+        li.style.color = "#888";
+        li.style.fontStyle = "italic";
+        li.style.padding = "10px";
+        recentProjectsList.appendChild(li);
+    } else {
+        projects.forEach(path => {
+            const li = document.createElement('li');
+            li.style.cursor = 'pointer';
+            li.style.padding = '10px';
+            li.style.borderBottom = '1px solid #444';
+            li.style.display = 'flex';
+            li.style.flexDirection = 'column';
+            li.style.transition = 'background-color 0.2s';
+            
+            li.onmouseover = () => li.style.backgroundColor = '#333';
+            li.onmouseout = () => li.style.backgroundColor = 'transparent';
+
+            li.onclick = async () => {
+                await window.electronAPI.openProject(path);
+            };
+
+            const nameSpan = document.createElement('span');
+            
+            const parts = path.replace(/[\\/]$/, '').split(/[\\/]/);
+            let folderName = parts.pop();
+            if (folderName.toLowerCase() === 'vortex' && parts.length > 0) {
+                folderName = parts.pop();
+            }
+            nameSpan.innerText = folderName;
+            nameSpan.style.fontWeight = 'bold';
+            nameSpan.style.fontSize = '1.1em';
+            nameSpan.style.color = '#eee';
+
+            const pathSpan = document.createElement('span');
+            pathSpan.innerText = path;
+            pathSpan.style.fontSize = '0.8em';
+            pathSpan.style.color = '#888';
+            pathSpan.style.marginTop = '4px';
+
+            li.appendChild(nameSpan);
+            li.appendChild(pathSpan);
+            recentProjectsList.appendChild(li);
+        });
+    }
 }
 
 function draw(robotPos = null, robotHeading = 0) {
