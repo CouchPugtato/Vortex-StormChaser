@@ -505,6 +505,33 @@ function draw() {
         const bumperPxX = robotSettings.bumper * pxPerMeterX;
         const bumperPxY = robotSettings.bumper * pxPerMeterY;
 
+        const canvasPoints = points.map(p => ({
+            x: (p.x - crop.left) * scaleX,
+            y: (p.y - crop.top) * scaleY
+        }));
+
+        if (canvasPoints.length > 1) {
+            ctx.beginPath();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#FFA500';
+            ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
+
+            for (let i = 0; i < canvasPoints.length - 1; i++) {
+                const p0 = canvasPoints[i === 0 ? 0 : i - 1];
+                const p1 = canvasPoints[i];
+                const p2 = canvasPoints[i + 1];
+                const p3 = canvasPoints[i + 2 >= canvasPoints.length ? canvasPoints.length - 1 : i + 2];
+
+                const cp1x = p1.x + (p2.x - p0.x) / 6;
+                const cp1y = p1.y + (p2.y - p0.y) / 6;
+                const cp2x = p2.x - (p3.x - p1.x) / 6;
+                const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+                ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, p2.x, p2.y);
+            }
+            ctx.stroke();
+        }
+
         points.forEach((p, i) => {
             if (p.x >= crop.left && p.x <= crop.right && p.y >= crop.top && p.y <= crop.bottom) {
                 const canvasX = (p.x - crop.left) * scaleX;
