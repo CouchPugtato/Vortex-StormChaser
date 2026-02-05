@@ -131,6 +131,12 @@ canvas {
     padding: 4px;
 }
 
+input:focus, textarea:focus, select:focus {
+    outline: none;
+    border-color: #777 !important;
+    box-shadow: 0 0 3px rgba(120, 120, 120, 0.5);
+}
+
 .btn {
     background-color: var(--button-bg);
     color: white;

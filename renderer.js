@@ -94,6 +94,8 @@ const recentProjectsList = document.getElementById('recentProjectsList');
 
 let availableEvents = [];
 let editingEventIndex = -1;
+let editingPointIndex = -1;
+let editingPointCancelTimer = null;
 let currentPathName = null;
 let currentRoutinePath = '';
 let pendingDeleteIsFolder = false;
@@ -1818,10 +1820,38 @@ function updatePointsList() {
         
         const li = document.createElement('li');
         if (!isVisible) li.style.opacity = '0.5';
+
+        const isEditing = (i === editingPointIndex);
+        let content;
+        if (isEditing) {
+            content = `
+                <div style="display: flex; gap: 5px; align-items: center; margin-bottom: 2px;">
+                    <span style="font-weight: bold; margin-right: 5px;">P${i+1}:</span>
+                    <input type="number" step="0.001" value="${coords.x.toFixed(3)}" 
+                        style="width: 60px; background: #333; color: white; border: 1px solid #555; padding: 2px;"
+                        onfocus="clearTimeout(editingPointCancelTimer)"
+                        onblur="cancelEditingPoint()"
+                        onchange="updatePointCoordinate(${i}, 'x', this.value)"
+                        onkeydown="if(event.key === 'Enter') this.blur()"
+                        id="point-x-${i}"
+                    >
+                    <span style="color: #aaa;">,</span>
+                    <input type="number" step="0.001" value="${coords.y.toFixed(3)}" 
+                        style="width: 60px; background: #333; color: white; border: 1px solid #555; padding: 2px;"
+                        onfocus="clearTimeout(editingPointCancelTimer)"
+                        onblur="cancelEditingPoint()"
+                        onchange="updatePointCoordinate(${i}, 'y', this.value)"
+                        onkeydown="if(event.key === 'Enter') this.blur()"
+                    >
+                </div>
+            `;
+        } else {
+             content = `<span style="cursor: pointer;" onclick="startEditingPoint(${i})" title="Click to edit coords">P${i + 1}: (${coords.x.toFixed(3)}, ${coords.y.toFixed(3)}) ${isVisible ? '' : '(Hidden)'}</span>`;
+        }
         
         li.innerHTML = `
             <div style="display: flex; flex-direction: column;">
-                <span>P${i + 1}: (${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) ${isVisible ? '' : '(Hidden)'}</span>
+                ${content}
                 <span style="font-size: 0.8em; color: #aaa;">Rot: ${rotationDeg}°</span>
             </div>
             <button class="delete-btn" onclick="deletePointAtIndex(${i})">X</button>
@@ -1856,7 +1886,7 @@ function updatePointsList() {
                             
                             nameContent = `<select id="event-select-${eventIndex}" onchange="updateEventName(${eventIndex}, this.value)" onblur="cancelEditingEvent()" style="background: #333; color: white; border: 1px solid #555; padding: 2px; width: 100%;">${optionsHtml}</select>`;
                         } else {
-                            nameContent = `<span style="color: #2e7d32; cursor: pointer; text-decoration: underline;" onclick="startEditingEvent(${eventIndex})" title="Click to edit">${e.name}</span>`;
+                            nameContent = `<span style="color: #2e7d32; cursor: pointer;" onclick="startEditingEvent(${eventIndex})" title="Click to edit">${e.name}</span>`;
                         }
                     } else {
                         nameContent = `<span style="color: #2e7d32;">Event: ${e.name}</span>`;
@@ -1904,7 +1934,7 @@ function updatePointsList() {
                      
                      nameContent = `<select id="event-select-${eventIndex}" onchange="updateEventName(${eventIndex}, this.value)" onblur="cancelEditingEvent()" style="background: #333; color: white; border: 1px solid #555; padding: 2px; width: 100%;">${optionsHtml}</select>`;
                  } else {
-                     nameContent = `<span style="color: #2e7d32; cursor: pointer; text-decoration: underline;" onclick="startEditingEvent(${eventIndex})" title="Click to edit">${e.name}</span>`;
+                     nameContent = `<span style="color: #2e7d32; cursor: pointer;" onclick="startEditingEvent(${eventIndex})" title="Click to edit">${e.name}</span>`;
                  }
              } else {
                  nameContent = `<span style="color: #2e7d32;">Event: ${e.name}</span>`;
@@ -1958,6 +1988,52 @@ window.updateEventName = (index, newName) => {
         draw(); 
         updatePointsList();
     }
+};
+
+window.startEditingPoint = (index) => {
+    clearTimeout(editingPointCancelTimer);
+    editingPointIndex = index;
+    updatePointsList();
+    setTimeout(() => {
+        const inputX = document.getElementById(`point-x-${index}`);
+        if (inputX) inputX.focus();
+    }, 10);
+};
+
+window.cancelEditingPoint = () => {
+    editingPointCancelTimer = setTimeout(() => {
+        editingPointIndex = -1;
+        updatePointsList();
+    }, 200);
+};
+
+window.updatePointCoordinate = (index, axis, value) => {
+    const val = parseFloat(value);
+    if (isNaN(val)) return;
+
+    const p = points[index];
+    const currentFieldCoords = getFieldCoordinates(p.x, p.y);
+    
+    let newFieldX = currentFieldCoords.x;
+    let newFieldY = currentFieldCoords.y;
+
+    if (axis === 'x') newFieldX = val;
+    if (axis === 'y') newFieldY = val;
+
+    const newImgCoords = getFieldCoordinatesInverse(newFieldX, newFieldY);
+    
+    const imgW = currentImage ? currentImage.width : 0;
+    const imgH = currentImage ? currentImage.height : 0;
+    
+    if (imgW > 0 && imgH > 0) {
+         p.x = Math.max(0, Math.min(imgW, newImgCoords.x));
+         p.y = Math.max(0, Math.min(imgH, newImgCoords.y));
+    } else {
+         p.x = newImgCoords.x;
+         p.y = newImgCoords.y;
+    }
+
+    draw();
 };
 
 window.addEventListener('resize', () => {
