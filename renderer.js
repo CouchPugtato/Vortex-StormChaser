@@ -1102,15 +1102,21 @@ function draw(robotPos = null, robotHeading = 0) {
                 const canvasY = (p.y - crop.top) * scaleY;
 
                 const bumperCorners = getCorners(canvasX, canvasY, robotSettings.width + 2 * robotSettings.bumper, robotSettings.height + 2 * robotSettings.bumper, p.rotation);
+                const robotCorners = getCorners(canvasX, canvasY, robotSettings.width, robotSettings.height, p.rotation);
+                
                 ctx.fillStyle = 'rgba(211, 47, 47, 0.7)'; 
                 ctx.beginPath();
                 ctx.moveTo(bumperCorners[0].x, bumperCorners[0].y);
                 bumperCorners.forEach((c, idx) => { if(idx>0) ctx.lineTo(c.x, c.y); });
                 ctx.closePath();
-                ctx.fill();
+                
+                ctx.moveTo(robotCorners[0].x, robotCorners[0].y);
+                robotCorners.forEach((c, idx) => { if(idx>0) ctx.lineTo(c.x, c.y); });
+                ctx.closePath();
+                
+                ctx.fill('evenodd');
 
-                const robotCorners = getCorners(canvasX, canvasY, robotSettings.width, robotSettings.height, p.rotation);
-                ctx.strokeStyle = '#2979FF';
+                ctx.strokeStyle = '#000000';
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(robotCorners[0].x, robotCorners[0].y);
@@ -1156,7 +1162,7 @@ function draw(robotPos = null, robotHeading = 0) {
                 ctx.fillStyle = '#2979FF';
                 ctx.fill();
                 
-                ctx.strokeStyle = 'rgba(0, 0, 255, 0.3)';
+                ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
                 ctx.beginPath();
                 ctx.moveTo(robotCorners[0].x, robotCorners[0].y);
                 robotCorners.forEach((c, idx) => { if(idx>0) ctx.lineTo(c.x, c.y); });
