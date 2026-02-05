@@ -8,6 +8,7 @@
     "robot": {
         "width": 0.6604,
         "height": 0.6604,
-        "bumper": 0.127
+        "bumper": 0.127,
+        "speed": 3.048
     }
 }
