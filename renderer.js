@@ -28,6 +28,7 @@ const valLabels = {
 
 let currentImage = null;
 let points = [];
+let events = [];
 let fieldConstants = {
     width: 16.541,
     height: 8.067
@@ -47,13 +48,18 @@ let saveSettingsTimeout = null;
 let isDraggingCrop = false;
 let isDraggingPoint = false;
 let isDraggingRotation = false;
-let draggingPointIndex = -1;
+let isDraggingEvent = false;
+let draggingEventIndex = -1;
+let dragStartEventPositions = [];
 let dragStart = { x: 0, y: 0 };
 let isPlaying = false;
 let animationStartTime = 0;
 let animationRequestId = null;
 
 const btnPlay = document.getElementById('btnPlay');
+const btnAddEvent = null;
+const eventTitleInput = null;
+const eventTInput = null;
 
 (async () => {
     const defaultPath = await window.electronAPI.getDefaultImage();
@@ -68,17 +74,20 @@ const btnPlay = document.getElementById('btnPlay');
                 break;
             case 'export-path':
                 if (points.length === 0) return;
-                const exportData = points.map((p, i) => {
-                    const coords = getFieldCoordinates(p.x, p.y);
-                    return {
-                        id: i + 1,
-                        x: Number(coords.x.toFixed(4)),
-                        y: Number(coords.y.toFixed(4)),
-                        rotation: Number((p.rotation * 180 / Math.PI).toFixed(2))
-                    };
-                });
+                const exportData = {
+                    points: points.map((p, i) => {
+                        const coords = getFieldCoordinates(p.x, p.y);
+                        return {
+                            id: i + 1,
+                            x: Number(coords.x.toFixed(4)),
+                            y: Number(coords.y.toFixed(4)),
+                            rotation: Number((p.rotation * 180 / Math.PI).toFixed(2))
+                        };
+                    }),
+                    events: events
+                };
                 const success = await window.electronAPI.saveFile(JSON.stringify(exportData, null, 4));
-                if (success) alert('Points exported successfully!');
+                if (success) alert('Path exported successfully!');
                 break;
             case 'toggle-crop':
                 const isCropHidden = cropSlidersDiv.classList.contains('hidden');
@@ -101,6 +110,7 @@ const btnPlay = document.getElementById('btnPlay');
                 break;
             case 'clear-points':
                 points = [];
+                events = [];
                 draw();
                 updatePointsList();
                 break;
@@ -162,20 +172,77 @@ canvas.addEventListener('mousedown', (e) => {
                 if (closestIdx !== -1) {
                     isDraggingPoint = true;
                     draggingPointIndex = closestIdx;
+                    
+                    dragStartEventPositions = [];
+                    if (events.length > 0 && points.length >= 2) {
+                        const pathMetrics = calculatePathMetrics();
+                        if (pathMetrics) {
+                            const fieldCoordsPoints = points.map(p => getFieldCoordinates(p.x, p.y));
+                            const splinePoints = getCatmullRomSplinePoints(fieldCoordsPoints, 50);
+                            events.forEach(e => {
+                                const pos = getPointAtDist(e.t * pathMetrics.totalLength, splinePoints);
+                                if (pos) {
+                                    dragStartEventPositions.push({ event: e, fieldX: pos.x, fieldY: pos.y });
+                                }
+                            });
+                        }
+                    }
                 } else {
                     addPoint(imgX, imgY);
                 }
             }
+        } else if (e.button === 2) {
+             const eventIdx = findClosestEventIndex(imgX, imgY);
+             if (eventIdx !== -1) {
+                 isDraggingEvent = true;
+                 draggingEventIndex = eventIdx;
+             } else {
+                 const { t, dist } = findClosestPointOnPath(imgX, imgY);
+                 const threshold = 15 / scaleX; 
+                 if (dist < threshold) {
+                      const newEvent = {
+                          name: "Event " + (events.length + 1),
+                          t: t
+                      };
+                      events.push(newEvent);
+                      events.sort((a, b) => a.t - b.t);
+                      
+                      isDraggingEvent = true;
+                      draggingEventIndex = events.findIndex(ev => ev === newEvent);
+                      
+                      draw();
+                      updatePointsList();
+                 }
+             }
         }
     }
 });
 
 window.addEventListener('mousemove', (e) => {
-    if ((!isDraggingCrop && !isDraggingPoint && !isDraggingRotation) || !currentImage) return;
+    if ((!isDraggingCrop && !isDraggingPoint && !isDraggingRotation && !isDraggingEvent) || !currentImage) return;
 
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
     const mouseY = e.clientY - rect.top;
+
+    if (isDraggingEvent) {
+        const crop = getCropRect();
+        const scaleX = canvas.width / crop.w;
+        const scaleY = canvas.height / crop.h;
+        
+        const imgX = crop.x + (mouseX / scaleX);
+        const imgY = crop.y + (mouseY / scaleY);
+        
+        const { t } = findClosestPointOnPath(imgX, imgY);
+        
+        events[draggingEventIndex].t = t;
+        events.sort((a, b) => a.t - b.t);
+        draggingEventIndex = events.findIndex(ev => ev.t === t);
+        
+        draw();
+        updatePointsList();
+        return;
+    }
 
     if (isDraggingRotation) {
         const crop = getCropRect();
@@ -196,6 +263,7 @@ window.addEventListener('mousemove', (e) => {
         p.rotation = Math.atan2(dy, dx);
         
         draw();
+        updatePointsList();
         return;
     }
 
@@ -209,6 +277,51 @@ window.addEventListener('mousemove', (e) => {
 
         points[draggingPointIndex].x = imgX;
         points[draggingPointIndex].y = imgY;
+        
+        if (dragStartEventPositions.length > 0 && points.length >= 2) {
+             const fieldCoordsPoints = points.map(p => getFieldCoordinates(p.x, p.y));
+             const splinePoints = getCatmullRomSplinePoints(fieldCoordsPoints, 50);
+             
+             let totalLength = 0;
+             for (let i = 0; i < splinePoints.length - 1; i++) {
+                 const dx = splinePoints[i+1].x - splinePoints[i].x;
+                 const dy = splinePoints[i+1].y - splinePoints[i].y;
+                 totalLength += Math.sqrt(dx*dx + dy*dy);
+             }
+             
+             dragStartEventPositions.forEach(item => {
+                 let minDist = Infinity;
+                 let closestT = 0;
+                 let distSoFar = 0;
+                 
+                 for (let i = 0; i < splinePoints.length - 1; i++) {
+                     const p1 = splinePoints[i];
+                     const p2 = splinePoints[i+1];
+                     
+                     const dx = p2.x - p1.x;
+                     const dy = p2.y - p1.y;
+                     const lenSq = dx*dx + dy*dy;
+                     const len = Math.sqrt(lenSq);
+                     
+                     if (lenSq > 0) {
+                         const tSeg = ((item.fieldX - p1.x) * dx + (item.fieldY - p1.y) * dy) / lenSq;
+                         const tClamped = Math.max(0, Math.min(1, tSeg));
+                         
+                         const projX = p1.x + tClamped * dx;
+                         const projY = p1.y + tClamped * dy;
+                         const dist = Math.sqrt(Math.pow(projX - item.fieldX, 2) + Math.pow(projY - item.fieldY, 2));
+                         
+                         if (dist < minDist) {
+                             minDist = dist;
+                             closestT = (distSoFar + tClamped * len) / totalLength;
+                         }
+                     }
+                     distSoFar += len;
+                 }
+                 item.event.t = Math.max(0, Math.min(1, closestT));
+             });
+             events.sort((a, b) => a.t - b.t);
+        }
         
         draw();
         updatePointsList();
@@ -246,10 +359,17 @@ window.addEventListener('mouseup', () => {
     isDraggingCrop = false;
     isDraggingPoint = false;
     isDraggingRotation = false;
+    isDraggingEvent = false;
     draggingPointIndex = -1;
+    draggingEventIndex = -1;
 });
 
 canvas.addEventListener('contextmenu', (e) => {
+    if (isDraggingEvent) {
+        e.preventDefault();
+        return;
+    }
+    
     e.preventDefault();
     if (!currentImage) return;
 
@@ -264,8 +384,15 @@ canvas.addEventListener('contextmenu', (e) => {
     const imgX = crop.x + (mouseX / scaleX);
     const imgY = crop.y + (mouseY / scaleY);
     
+    const eventIdx = findClosestEventIndex(imgX, imgY);
+    if (eventIdx !== -1) {
+        return; 
+    }
+
     deleteClosestPoint(imgX, imgY);
 });
+
+
 
 btnPlay.addEventListener('click', () => {
     if (points.length < 2) return;
@@ -372,8 +499,64 @@ function saveSettings() {
     window.electronAPI.saveSettings(settings);
 }
 
+function getFieldCoordinatesInverse(fx, fy, cropOverride) {
+    const crop = cropOverride || getCropRect();
+    const relX = fx / fieldConstants.width;
+    const relY = fy / fieldConstants.height;
+    const imgX = crop.left + relX * crop.w;
+    const imgY = crop.bottom - relY * crop.h;
+    return { x: imgX, y: imgY };
+}
+
+function getPointAtDist(dist, splinePoints) {
+    let currentDist = 0;
+    for (let i = 0; i < splinePoints.length - 1; i++) {
+        const p1 = splinePoints[i];
+        const p2 = splinePoints[i+1];
+        const dx = p2.x - p1.x;
+        const dy = p2.y - p1.y;
+        const len = Math.sqrt(dx*dx + dy*dy);
+        
+        if (currentDist + len >= dist) {
+            const t = (dist - currentDist) / len;
+            return {
+                x: p1.x + (p2.x - p1.x) * t,
+                y: p1.y + (p2.y - p1.y) * t
+            };
+        }
+        currentDist += len;
+    }
+    return splinePoints[splinePoints.length - 1];
+}
+
 function addPoint(x, y) {
+    const savedEventPositions = [];
+    if (events.length > 0 && points.length >= 2) {
+        const pathMetrics = calculatePathMetrics();
+        if (pathMetrics) {
+            const fieldCoordsPoints = points.map(p => getFieldCoordinates(p.x, p.y));
+            const splinePoints = getCatmullRomSplinePoints(fieldCoordsPoints, 50);
+            
+            events.forEach(e => {
+                const pos = getPointAtDist(e.t * pathMetrics.totalLength, splinePoints);
+                if (pos) {
+                    savedEventPositions.push({ event: e, fieldX: pos.x, fieldY: pos.y });
+                }
+            });
+        }
+    }
+
     points.push({ x, y, rotation: 0 });
+    
+    if (savedEventPositions.length > 0 && points.length >= 2) {
+        savedEventPositions.forEach(item => {
+            const imgPos = getFieldCoordinatesInverse(item.fieldX, item.fieldY);
+            const result = findClosestPointOnPath(imgPos.x, imgPos.y);
+            item.event.t = result.t;
+        });
+        events.sort((a, b) => a.t - b.t);
+    }
+
     draw();
     updatePointsList();
 }
@@ -439,6 +622,89 @@ function findClosestRotationHandleIndex(x, y) {
     return -1;
 }
 
+function findClosestEventIndex(imgX, imgY) {
+    if (events.length === 0 || points.length < 2) return -1;
+    
+    const pathMetrics = calculatePathMetrics();
+    if (!pathMetrics) return -1;
+    
+    const fieldCoordsPoints = points.map(p => getFieldCoordinates(p.x, p.y));
+    const splinePoints = getCatmullRomSplinePoints(fieldCoordsPoints, 50);
+    const totalLength = pathMetrics.totalLength;
+
+    const crop = getCropRect();
+    const scaleX = canvas.width / crop.w;
+    const threshold = 15 / scaleX; 
+
+    let closestIdx = -1;
+    let minDst = Infinity;
+
+    events.forEach((ev, i) => {
+        const targetDist = ev.t * totalLength;
+        const pos = getPointAtDist(targetDist, splinePoints);
+        if (pos) {
+             const pImg = getFieldCoordinatesInverse(pos.x, pos.y, crop);
+             const dst = Math.sqrt(Math.pow(pImg.x - imgX, 2) + Math.pow(pImg.y - imgY, 2));
+             
+             if (dst < minDst) {
+                 minDst = dst;
+                 closestIdx = i;
+             }
+        }
+    });
+    
+    if (closestIdx !== -1 && minDst < threshold) {
+        return closestIdx;
+    }
+    return -1;
+}
+
+function findClosestPointOnPath(imgX, imgY) {
+    const fieldCoordsPoints = points.map(p => getFieldCoordinates(p.x, p.y));
+    const splinePoints = getCatmullRomSplinePoints(fieldCoordsPoints, 50);
+    
+    const crop = getCropRect();
+    
+    let minDist = Infinity;
+    let closestT = 0;
+    let currentPathDist = 0;
+    
+    const pathMetrics = calculatePathMetrics();
+    const totalLength = pathMetrics ? pathMetrics.totalLength : 1;
+    
+    for (let i = 0; i < splinePoints.length - 1; i++) {
+        const p1 = splinePoints[i];
+        const p2 = splinePoints[i+1];
+        const dxField = p2.x - p1.x;
+        const dyField = p2.y - p1.y;
+        const lenField = Math.sqrt(dxField*dxField + dyField*dyField);
+        
+        const p1Img = getFieldCoordinatesInverse(p1.x, p1.y, crop);
+        const p2Img = getFieldCoordinatesInverse(p2.x, p2.y, crop);
+        const dxImg = p2Img.x - p1Img.x;
+        const dyImg = p2Img.y - p1Img.y;
+        const lenImgSq = dxImg*dxImg + dyImg*dyImg;
+        
+        if (lenImgSq > 0) {
+            const tSeg = ((imgX - p1Img.x) * dxImg + (imgY - p1Img.y) * dyImg) / lenImgSq;
+            const tClamped = Math.max(0, Math.min(1, tSeg));
+            
+            const projX = p1Img.x + tClamped * dxImg;
+            const projY = p1Img.y + tClamped * dyImg;
+            const dist = Math.sqrt(Math.pow(projX - imgX, 2) + Math.pow(projY - imgY, 2));
+            
+            if (dist < minDist) {
+                minDist = dist;
+                closestT = (currentPathDist + tClamped * lenField) / totalLength;
+            }
+        }
+        
+        currentPathDist += lenField;
+    }
+
+    return { t: Math.max(0, Math.min(1, closestT)), dist: minDist };
+}
+
 function deleteClosestPoint(x, y) {
     const crop = getCropRect();
     const scaleX = canvas.width / crop.w;
@@ -499,6 +765,38 @@ function getFieldCoordinates(imgX, imgY) {
         x: relX * fieldConstants.width,
         y: relY * fieldConstants.height
     };
+}
+
+function calculatePathMetrics() {
+    if (points.length < 2) return null;
+
+    const fieldCoordsPoints = points.map(p => getFieldCoordinates(p.x, p.y));
+    const splinePoints = getCatmullRomSplinePoints(fieldCoordsPoints, 50);
+    
+    let totalLength = 0;
+    const userSegmentLengths = [];
+    
+    const pointsPerSegment = 51; 
+    
+    for (let i = 0; i < points.length - 1; i++) {
+        let segLen = 0;
+        const startIndex = i * pointsPerSegment;
+        
+        for (let j = 0; j < 50; j++) {
+            const p1 = splinePoints[startIndex + j];
+            const p2 = splinePoints[startIndex + j + 1];
+            if (p1 && p2) {
+                const dx = p1.x - p2.x;
+                const dy = p1.y - p2.y;
+                segLen += Math.sqrt(dx*dx + dy*dy);
+            }
+        }
+        
+        userSegmentLengths.push(segLen);
+        totalLength += segLen;
+    }
+    
+    return { totalLength, userSegmentLengths };
 }
 
 function getCatmullRomSplinePoints(points, segments = 20) {
@@ -713,37 +1011,89 @@ function draw(robotPos = null, robotHeading = 0) {
              });
         };
 
-        const canvasPoints = points.map(p => ({
-            x: (p.x - crop.left) * scaleX,
-            y: (p.y - crop.top) * scaleY
-        }));
+        if (points.length >= 2) {
+             const fieldCoordsPoints = points.map(p => getFieldCoordinates(p.x, p.y));
+             const splinePoints = getCatmullRomSplinePoints(fieldCoordsPoints, 50);
+             
+             ctx.beginPath();
+             ctx.strokeStyle = '#0088ff';
+             ctx.lineWidth = 3;
+             
+             const getFieldCoordinatesInverse = (fx, fy) => {
+                 const relX = fx / fieldConstants.width;
+                 const relY = fy / fieldConstants.height;
+                 
+                 const imgX = crop.left + relX * crop.w;
+                 const imgY = crop.bottom - relY * crop.h;
+                 
+                 return { x: imgX, y: imgY };
+             };
+             
+             const startImg = getFieldCoordinatesInverse(splinePoints[0].x, splinePoints[0].y);
+             ctx.moveTo(
+                 (startImg.x - crop.x) * scaleX, 
+                 (startImg.y - crop.y) * scaleY
+             );
+             
+             for (let i = 1; i < splinePoints.length; i++) {
+                 const pImg = getFieldCoordinatesInverse(splinePoints[i].x, splinePoints[i].y);
+                 ctx.lineTo(
+                     (pImg.x - crop.x) * scaleX, 
+                     (pImg.y - crop.y) * scaleY
+                 );
+             }
+             ctx.stroke();
+             
+             if (events.length > 0) {
+                 const pathMetrics = calculatePathMetrics();
+                 if (pathMetrics) {
+                     const totalLength = pathMetrics.totalLength;
+                     
+                     const getPointAtDist = (dist) => {
+                         let currentDist = 0;
+                         for (let i = 0; i < splinePoints.length - 1; i++) {
+                             const p1 = splinePoints[i];
+                             const p2 = splinePoints[i+1];
+                             const dx = p2.x - p1.x;
+                             const dy = p2.y - p1.y;
+                             const len = Math.sqrt(dx*dx + dy*dy);
+                             
+                             if (currentDist + len >= dist) {
+                                 const t = (dist - currentDist) / len;
+                                 return {
+                                     x: p1.x + (p2.x - p1.x) * t,
+                                     y: p1.y + (p2.y - p1.y) * t
+                                 };
+                             }
+                             currentDist += len;
+                         }
+                         return splinePoints[splinePoints.length - 1];
+                     };
 
-        if (canvasPoints.length > 1) {
-            ctx.beginPath();
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = '#FFA500';
-            ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y);
-
-            const fieldCoordsPoints = points.map(p => {
-                const coords = getFieldCoordinates(p.x, p.y);
-                return { x: coords.x, y: coords.y }; 
-            });
-            const splinePoints = getCatmullRomSplinePoints(fieldCoordsPoints, 50);
-            
-            const canvasSplinePoints = splinePoints.map(p => {
-                const cx = (p.x / fieldConstants.width) * canvas.width;
-                const cy = canvas.height - (p.y / fieldConstants.height) * canvas.height;
-                return { x: cx, y: cy };
-            });
-
-            if (canvasSplinePoints.length > 0) {
-                ctx.beginPath();
-                ctx.moveTo(canvasSplinePoints[0].x, canvasSplinePoints[0].y);
-                for (let i = 1; i < canvasSplinePoints.length; i++) {
-                    ctx.lineTo(canvasSplinePoints[i].x, canvasSplinePoints[i].y);
-                }
-                ctx.stroke();
-            }
+                     events.forEach(ev => {
+                         const targetDist = ev.t * totalLength;
+                         const pos = getPointAtDist(targetDist);
+                         
+                         if (pos) {
+                             const pImg = getFieldCoordinatesInverse(pos.x, pos.y);
+                             const screenX = (pImg.x - crop.x) * scaleX;
+                             const screenY = (pImg.y - crop.y) * scaleY;
+                             
+                             ctx.beginPath();
+                            ctx.fillStyle = '#2e7d32';
+                            ctx.arc(screenX, screenY, 6, 0, Math.PI * 2);
+                            ctx.fill();
+                            ctx.strokeStyle = 'white';
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                            
+                            ctx.fillStyle = '#2e7d32';
+                            ctx.font = '12px Arial';
+                            ctx.fillText(ev.name, screenX + 10, screenY - 10);
+                         }
+                     });
+                 }
+             }
         }
 
         points.forEach((p, i) => {
@@ -868,8 +1218,19 @@ function draw(robotPos = null, robotHeading = 0) {
 function updatePointsList() {
     pointsList.innerHTML = '';
     
+    let metrics = null;
+    if (points.length >= 2) {
+        metrics = calculatePathMetrics();
+    }
+    
+    events.sort((a, b) => a.t - b.t);
+    
+    let currentDist = 0;
+    let eventIndex = 0;
+
     points.forEach((p, i) => {
         const coords = getFieldCoordinates(p.x, p.y);
+        const rotationDeg = (p.rotation * 180 / Math.PI).toFixed(1);
         
         const crop = getCropRect();
         const isVisible = (p.x >= crop.left && p.x <= crop.right && p.y >= crop.top && p.y <= crop.bottom);
@@ -878,16 +1239,73 @@ function updatePointsList() {
         if (!isVisible) li.style.opacity = '0.5';
         
         li.innerHTML = `
-            <span>P${i + 1}: (${coords.x.toFixed(3)}, ${coords.y.toFixed(3)}) ${isVisible ? '' : '(Hidden)'}</span>
+            <div style="display: flex; flex-direction: column;">
+                <span>P${i + 1}: (${coords.x.toFixed(2)}, ${coords.y.toFixed(2)}) ${isVisible ? '' : '(Hidden)'}</span>
+                <span style="font-size: 0.8em; color: #aaa;">Rot: ${rotationDeg}°</span>
+            </div>
             <button class="delete-btn" onclick="deletePointAtIndex(${i})">X</button>
         `;
         pointsList.appendChild(li);
+
+        if (metrics && i < points.length - 1) {
+            const segLen = metrics.userSegmentLengths[i];
+            const nextDist = currentDist + segLen;
+            
+            while(eventIndex < events.length) {
+                const e = events[eventIndex];
+                const eDist = e.t * metrics.totalLength;
+                
+                if (eDist >= currentDist && eDist < nextDist) {
+                    const liEvent = document.createElement('li');
+                    liEvent.style.borderLeft = "2px solid #2e7d32";
+                    liEvent.style.backgroundColor = "#1a1a1a";
+                    liEvent.innerHTML = `
+                        <div style="display: flex; flex-direction: column;">
+                            <span style="color: #2e7d32;">Event: ${e.name}</span>
+                            <span style="font-size: 0.8em; color: #aaa;">t: ${e.t}</span>
+                        </div>
+                        <button class="delete-btn" onclick="deleteEventAtIndex(${eventIndex})">X</button>
+                    `;
+                    pointsList.appendChild(liEvent);
+                    eventIndex++;
+                } else if (eDist < currentDist) {
+                     eventIndex++;
+                } else {
+                    break;
+                }
+            }
+            
+            currentDist += segLen;
+        }
     });
+
+    if (metrics) {
+         while(eventIndex < events.length) {
+             const e = events[eventIndex];
+             const liEvent = document.createElement('li');
+             liEvent.style.borderLeft = "2px solid #2e7d32";
+             liEvent.style.backgroundColor = "#1a1a1a";
+             liEvent.innerHTML = `
+                <div style="display: flex; flex-direction: column;">
+                    <span style="color: #2e7d32;">Event: ${e.name}</span>
+                    <span style="font-size: 0.8em; color: #aaa;">t: ${e.t}</span>
+                </div>
+                <button class="delete-btn" onclick="deleteEventAtIndex(${eventIndex})">X</button>
+            `;
+            pointsList.appendChild(liEvent);
+            eventIndex++;
+         }
+    }
 }
 
 window.deletePointAtIndex = (index) => {
     points.splice(index, 1);
     draw();
+    updatePointsList();
+};
+
+window.deleteEventAtIndex = (index) => {
+    events.splice(index, 1);
     updatePointsList();
 };
 
