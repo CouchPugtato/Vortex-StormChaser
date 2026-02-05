@@ -44,6 +44,14 @@
 
             <div class="controls-section">
                 
+                <div class="path-controls">
+                    <div id="currentPathDisplay" style="color: #ddd; margin-bottom: 10px; font-weight: bold;">Current Path: Untitled</div>
+                    <div style="display: flex; gap: 10px;">
+                        <button id="btnSavePath" class="btn" style="flex: 1; background-color: #1976d2;">Save</button>
+                        <button id="btnOpenPath" class="btn" style="flex: 1; background-color: #424242;">Open</button>
+                    </div>
+                </div>
+
                 <div id="robotSettings" class="hidden">
                     <div class="input-group">
                         <label>Width (in):</label>
@@ -62,6 +70,7 @@
                         <input type="number" id="robotSpeed" step="10" value="120">
                     </div>
                 </div>
+                
                 <button id="btnPlay" class="btn" style="margin-top: 10px; width: 100%; background-color: #2e7d32; color: white;">Play Animation</button>
             </div>
 
@@ -73,6 +82,18 @@
                 <ul id="pointsList" class="points-list">
                 </ul>
             </div>
+        </div>
+    </div>
+
+    <div id="openPathModal" class="modal hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Open Path</h3>
+                <span class="close-modal" id="closeOpenPathModal">&times;</span>
+            </div>
+            <ul id="pathFileList" class="file-list">
+                
+            </ul>
         </div>
     </div>
 

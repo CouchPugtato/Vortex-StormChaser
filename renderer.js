@@ -61,6 +61,24 @@ const btnAddEvent = null;
 const eventTitleInput = null;
 const eventTInput = null;
 
+
+const currentPathDisplay = document.getElementById('currentPathDisplay');
+const btnSavePath = document.getElementById('btnSavePath');
+const btnOpenPath = document.getElementById('btnOpenPath');
+const openPathModal = document.getElementById('openPathModal');
+const pathFileList = document.getElementById('pathFileList');
+const closeModalBtn = document.querySelector('.close-modal');
+
+let availableEvents = [];
+let editingEventIndex = -1;
+let currentPathName = null;
+
+function updatePathDisplay() {
+    if (currentPathDisplay) {
+        currentPathDisplay.innerText = `Current Path: ${currentPathName || 'Untitled'}`;
+    }
+}
+
 (async () => {
     const defaultPath = await window.electronAPI.getDefaultImage();
     if (defaultPath) {
@@ -114,9 +132,61 @@ const eventTInput = null;
                 draw();
                 updatePointsList();
                 break;
+            case 'load-events-config':
+                loadEvents(payload);
+                break;
+            case 'project-loaded':
+                handleProjectLoaded(payload);
+                break;
         }
     });
 })();
+
+function handleProjectLoaded(data) {
+    if (data.events && Array.isArray(data.events)) {
+        availableEvents = data.events;
+    }
+    
+    if (data.settings) {
+        const settings = data.settings;
+        if (settings.crop) {
+            sliders.left.value = settings.crop.left;
+            sliders.right.value = settings.crop.right;
+            sliders.top.value = settings.crop.top;
+            sliders.bottom.value = settings.crop.bottom;
+            updateSliderLabels();
+        }
+        if (settings.robot) {
+            robotSettings.width = settings.robot.width || (28 * METERS_PER_INCH);
+            robotSettings.height = settings.robot.height || (28 * METERS_PER_INCH);
+            robotSettings.bumper = settings.robot.bumper || (3 * METERS_PER_INCH);
+            robotSettings.speed = settings.robot.speed || (120 * METERS_PER_INCH);
+            
+            robotInputs.width.value = (robotSettings.width / METERS_PER_INCH).toFixed(1);
+            robotInputs.height.value = (robotSettings.height / METERS_PER_INCH).toFixed(1);
+            robotInputs.bumper.value = (robotSettings.bumper / METERS_PER_INCH).toFixed(1);
+            robotInputs.speed.value = (robotSettings.speed / METERS_PER_INCH).toFixed(1);
+        }
+    }
+    
+    
+    points = [];
+    events = [];
+    
+    draw();
+    updatePointsList();
+    alert(`Project Loaded: ${data.path}\nEvents loaded: ${availableEvents.length}`);
+}
+
+function loadEvents(data) {
+    if (Array.isArray(data) && data.every(item => typeof item === 'string')) {
+        availableEvents = data;
+        updatePointsList(); 
+        alert(`Loaded ${availableEvents.length} event types.`);
+    } else {
+        alert('Invalid JSON format. Expected an array of strings.');
+    }
+}
 
 Object.keys(robotInputs).forEach(key => {
     robotInputs[key].addEventListener('input', (e) => {
@@ -200,8 +270,13 @@ canvas.addEventListener('mousedown', (e) => {
                  const { t, dist } = findClosestPointOnPath(imgX, imgY);
                  const threshold = 15 / scaleX; 
                  if (dist < threshold) {
+                      let eventName = "Event " + (events.length + 1);
+                      if (availableEvents.length > 0) {
+                          eventName = availableEvents[0];
+                      }
+
                       const newEvent = {
-                          name: "Event " + (events.length + 1),
+                          name: eventName,
                           t: t
                       };
                       events.push(newEvent);
@@ -411,6 +486,136 @@ btnPlay.addEventListener('click', () => {
         animate();
     }
 });
+
+
+if (btnSavePath) {
+    btnSavePath.addEventListener('click', async () => {
+        if (points.length === 0) {
+            alert('No points to save.');
+            return;
+        }
+
+        let name = currentPathName;
+        if (!name) {
+            const input = prompt('Enter path name:');
+            if (!input) return; 
+            name = input.trim();
+            if (!name) return;
+        }
+
+        const exportData = {
+            points: points.map((p, i) => {
+                const coords = getFieldCoordinates(p.x, p.y);
+                return {
+                    id: i + 1,
+                    x: Number(coords.x.toFixed(4)),
+                    y: Number(coords.y.toFixed(4)),
+                    rotation: Number((p.rotation * 180 / Math.PI).toFixed(2))
+                };
+            }),
+            events: events
+        };
+
+        const filename = name.endsWith('.json') ? name : name + '.json';
+        const success = await window.electronAPI.saveRoutine(filename, JSON.stringify(exportData, null, 4));
+        if (success) {
+            currentPathName = filename;
+            updatePathDisplay();
+            alert('Path saved successfully!');
+        } else {
+            alert('Failed to save path. Make sure a project is open.');
+        }
+    });
+}
+
+if (btnOpenPath) {
+    btnOpenPath.addEventListener('click', async () => {
+        const files = await window.electronAPI.listRoutines();
+        pathFileList.innerHTML = '';
+        
+        if (files.length === 0) {
+            const li = document.createElement('li');
+            li.innerText = "No routines found.";
+            pathFileList.appendChild(li);
+        } else {
+            files.forEach(file => {
+                const li = document.createElement('li');
+                li.innerText = file;
+                li.onclick = async () => {
+                    await loadRoutine(file);
+                    openPathModal.classList.add('hidden');
+                };
+                pathFileList.appendChild(li);
+            });
+        }
+        
+        openPathModal.classList.remove('hidden');
+    });
+}
+
+if (closeModalBtn) {
+    closeModalBtn.addEventListener('click', () => {
+        openPathModal.classList.add('hidden');
+    });
+}
+
+window.addEventListener('click', (e) => {
+    if (e.target === openPathModal) {
+        openPathModal.classList.add('hidden');
+    }
+});
+
+async function loadRoutine(filename) {
+    const data = await window.electronAPI.loadRoutine(filename);
+    if (!data) {
+        alert('Failed to load routine.');
+        return;
+    }
+    
+    
+    if (!data.points || !Array.isArray(data.points)) {
+        alert('Invalid routine file format.');
+        return;
+    }
+
+    currentPathName = filename;
+    updatePathDisplay();
+
+    
+    
+    
+    
+    points = [];
+    events = [];
+
+    
+    
+    
+    if (!currentImage) {
+        alert('Please load a field image first.');
+        return;
+    }
+
+    const crop = getCropRect();
+    
+    data.points.forEach(p => {
+        
+        const imgPos = getFieldCoordinatesInverse(p.x, p.y, crop);
+        
+        points.push({
+            x: imgPos.x,
+            y: imgPos.y,
+            rotation: (p.rotation || 0) * Math.PI / 180
+        });
+    });
+
+    if (data.events && Array.isArray(data.events)) {
+        events = data.events;
+    }
+
+    draw();
+    updatePointsList();
+}
 
 Object.keys(sliders).forEach(key => {
     sliders[key].addEventListener('input', (e) => {
@@ -1265,10 +1470,32 @@ function updatePointsList() {
                     const liEvent = document.createElement('li');
                     liEvent.style.borderLeft = "2px solid #2e7d32";
                     liEvent.style.backgroundColor = "#1a1a1a";
+                    
+                    let nameContent;
+                    const isEditing = (eventIndex === editingEventIndex);
+
+                    if (availableEvents.length > 0) {
+                        if (isEditing) {
+                            let optionsHtml = '';
+                            if (!availableEvents.includes(e.name)) {
+                                optionsHtml += `<option value="${e.name}" selected>${e.name}</option>`;
+                            }
+                            optionsHtml += availableEvents.map(opt => 
+                                `<option value="${opt}" ${opt === e.name ? 'selected' : ''}>${opt}</option>`
+                            ).join('');
+                            
+                            nameContent = `<select id="event-select-${eventIndex}" onchange="updateEventName(${eventIndex}, this.value)" onblur="cancelEditingEvent()" style="background: #333; color: white; border: 1px solid #555; padding: 2px; width: 100%;">${optionsHtml}</select>`;
+                        } else {
+                            nameContent = `<span style="color: #2e7d32; cursor: pointer; text-decoration: underline;" onclick="startEditingEvent(${eventIndex})" title="Click to edit">${e.name}</span>`;
+                        }
+                    } else {
+                        nameContent = `<span style="color: #2e7d32;">Event: ${e.name}</span>`;
+                    }
+
                     liEvent.innerHTML = `
-                        <div style="display: flex; flex-direction: column;">
-                            <span style="color: #2e7d32;">Event: ${e.name}</span>
-                            <span style="font-size: 0.8em; color: #aaa;">t: ${e.t}</span>
+                        <div style="display: flex; flex-direction: column; width: 100%;">
+                            ${nameContent}
+                            <span style="font-size: 0.8em; color: #aaa;">t: ${e.t.toFixed(4)}</span>
                         </div>
                         <button class="delete-btn" onclick="deleteEventAtIndex(${eventIndex})">X</button>
                     `;
@@ -1291,10 +1518,32 @@ function updatePointsList() {
              const liEvent = document.createElement('li');
              liEvent.style.borderLeft = "2px solid #2e7d32";
              liEvent.style.backgroundColor = "#1a1a1a";
+
+             let nameContent;
+             const isEditing = (eventIndex === editingEventIndex);
+
+             if (availableEvents.length > 0) {
+                 if (isEditing) {
+                     let optionsHtml = '';
+                     if (!availableEvents.includes(e.name)) {
+                         optionsHtml += `<option value="${e.name}" selected>${e.name}</option>`;
+                     }
+                     optionsHtml += availableEvents.map(opt => 
+                         `<option value="${opt}" ${opt === e.name ? 'selected' : ''}>${opt}</option>`
+                     ).join('');
+                     
+                     nameContent = `<select id="event-select-${eventIndex}" onchange="updateEventName(${eventIndex}, this.value)" onblur="cancelEditingEvent()" style="background: #333; color: white; border: 1px solid #555; padding: 2px; width: 100%;">${optionsHtml}</select>`;
+                 } else {
+                     nameContent = `<span style="color: #2e7d32; cursor: pointer; text-decoration: underline;" onclick="startEditingEvent(${eventIndex})" title="Click to edit">${e.name}</span>`;
+                 }
+             } else {
+                 nameContent = `<span style="color: #2e7d32;">Event: ${e.name}</span>`;
+             }
+
              liEvent.innerHTML = `
-                <div style="display: flex; flex-direction: column;">
-                    <span style="color: #2e7d32;">Event: ${e.name}</span>
-                    <span style="font-size: 0.8em; color: #aaa;">t: ${e.t}</span>
+                <div style="display: flex; flex-direction: column; width: 100%;">
+                    ${nameContent}
+                    <span style="font-size: 0.8em; color: #aaa;">t: ${e.t.toFixed(4)}</span>
                 </div>
                 <button class="delete-btn" onclick="deleteEventAtIndex(${eventIndex})">X</button>
             `;
@@ -1303,6 +1552,22 @@ function updatePointsList() {
          }
     }
 }
+
+window.startEditingEvent = (index) => {
+    editingEventIndex = index;
+    updatePointsList();
+    setTimeout(() => {
+        const select = document.getElementById(`event-select-${index}`);
+        if (select) select.focus();
+    }, 10);
+};
+
+window.cancelEditingEvent = () => {
+    setTimeout(() => {
+        editingEventIndex = -1;
+        updatePointsList();
+    }, 200);
+};
 
 window.deletePointAtIndex = (index) => {
     points.splice(index, 1);
@@ -1313,6 +1578,16 @@ window.deletePointAtIndex = (index) => {
 window.deleteEventAtIndex = (index) => {
     events.splice(index, 1);
     updatePointsList();
+    draw();
+};
+
+window.updateEventName = (index, newName) => {
+    if (events[index]) {
+        events[index].name = newName;
+        editingEventIndex = -1;
+        draw(); 
+        updatePointsList();
+    }
 };
 
 window.addEventListener('resize', () => {

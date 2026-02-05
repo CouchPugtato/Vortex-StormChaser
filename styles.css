@@ -17,6 +17,25 @@ body {
     overflow: hidden;
 }
 
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #1a1a1a; 
+}
+
+::-webkit-scrollbar-thumb {
+    background: #444; 
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #555; 
+}
+
 .container {
     display: flex;
     height: 100%;
@@ -81,7 +100,7 @@ canvas {
 }
 
 .hidden {
-    display: none;
+    display: none !important;
 }
 
 #cropSliders, #robotSettings {
@@ -98,53 +117,56 @@ canvas {
 
 .slider-group label, .input-group label {
     display: block;
-    font-size: 0.85em;
+    margin-bottom: 2px;
+    font-size: 0.9em;
     color: #ccc;
-    margin-bottom: 3px;
 }
 
-.input-group input[type="number"] {
+.slider-group input[type=range], .input-group input[type=number], .input-group input[type=text] {
     width: 100%;
-    background: #222;
-    border: 1px solid #444;
-    color: #fff;
-    padding: 5px;
-    border-radius: 3px;
     box-sizing: border-box;
+    background-color: #333;
+    color: #fff;
+    border: 1px solid #555;
+    padding: 4px;
 }
 
-.input-group input[type="number"]:focus {
-    outline: none;
-    border-color: #cc0000;
+.btn {
+    background-color: var(--button-bg);
+    color: white;
+    border: 1px solid #444;
+    padding: 8px 12px;
+    cursor: pointer;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+    font-size: 0.9em;
+    text-transform: uppercase;
 }
 
-input[type=range] {
-    width: 100%;
-    accent-color: var(--text-color);
-    background: transparent;
+.btn:hover {
+    background-color: var(--button-hover);
 }
 
 .points-section {
     flex: 1;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
 }
 
 .points-list {
-    flex: 1;
     list-style: none;
     padding: 0;
-    margin: 10px 0;
+    margin: 10px 0 0 0;
     overflow-y: auto;
-    border: 1px solid #333;
-    background-color: #000;
+    flex: 1;
+    border-top: 1px solid #333;
 }
 
 .points-list li {
-    padding: 5px 10px;
+    padding: 8px;
     border-bottom: 1px solid #222;
-    font-size: 0.9em;
+    background-color: #0a0a0a;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -154,50 +176,95 @@ input[type=range] {
     background-color: #1a1a1a;
 }
 
+.point-info {
+    font-size: 0.9em;
+    color: #ddd;
+}
+
+.point-coords {
+    color: #888;
+    font-size: 0.8em;
+}
+
+.modal {
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0,0,0,0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background-color: #222;
+    border: 1px solid #444;
+    padding: 20px;
+    width: 400px;
+    max-height: 80%;
+    overflow-y: auto;
+    border-radius: 5px;
+    color: #fff;
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #444;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+}
+
+.close-modal {
+    color: #aaa;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close-modal:hover {
+    color: #fff;
+}
+
+.file-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.file-list li {
+    padding: 10px;
+    border-bottom: 1px solid #333;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.file-list li:hover {
+    background-color: #333;
+}
+
+.path-controls {
+    margin-bottom: 15px;
+    padding: 10px;
+    background-color: #1a1a1a;
+    border: 1px solid #333;
+    border-radius: 4px;
+}
+
 .delete-btn {
     background: none;
     border: none;
-    color: #666;
+    color: #292929;
     cursor: pointer;
     font-weight: bold;
+    font-size: 1em;
+    padding: 4px;
 }
 
 .delete-btn:hover {
-    color: red;
-}
-
-.btn {
-    background-color: var(--button-bg);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    padding: 8px 15px;
-    cursor: pointer;
-    font-weight: bold;
-    transition: background 0.2s;
-    width: 100%;
-    margin-bottom: 5px;
-    text-transform: uppercase;
-}
-
-.btn:hover {
-    background-color: var(--button-hover);
-}
-
-.footer-buttons {
-    display: flex;
-    gap: 10px;
-}
-
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-::-webkit-scrollbar-track {
-    background: #111;
-}
-::-webkit-scrollbar-thumb {
-    background: #333;
-}
-::-webkit-scrollbar-thumb:hover {
-    background: #555;
+    color: #333;
 }
