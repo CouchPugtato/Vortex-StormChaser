@@ -88,13 +88,27 @@
     <div id="openPathModal" class="modal hidden">
         <div class="modal-content" style="width: 70%; max-width: 900px;">
             <div class="modal-header">
-                <h3>Open Path</h3>
-                <button id="btnNewPathFromModal" class="btn" style="margin-left: auto; margin-right: 20px; background-color: #2e7d32; padding: 5px 15px;">New Path</button>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button id="btnPathBack" class="btn hidden" style="padding: 5px 10px;">&larr;</button>
+                    <h3 id="openPathTitle">Open Path</h3>
+                </div>
+                <div style="margin-left: auto; display: flex; gap: 10px; margin-right: 20px;">
+                    <button id="btnNewFolderFromModal" class="btn" style="background-color: #555; padding: 5px 15px;">New Folder</button>
+                    <button id="btnNewPathFromModal" class="btn" style="background-color: #2e7d32; padding: 5px 15px;">New Path</button>
+                </div>
                 <span class="close-modal" id="closeOpenPathModal">&times;</span>
             </div>
-            <ul id="pathFileList" class="file-list">
-                
-            </ul>
+            <div id="foldersSection">
+                <h4 id="foldersTitle" style="margin: 10px 0 5px 0; color: #aaa; display: none;">Folders</h4>
+                <ul id="folderList" class="path-grid"></ul>
+            </div>
+            
+            <hr id="pathDivider" style="border: 0; border-top: 1px solid #444; margin: 20px 0; display: none;">
+            
+            <div id="filesSection">
+                <h4 id="filesTitle" style="margin: 10px 0 5px 0; color: #aaa; display: none;">Paths</h4>
+                <ul id="fileList" class="path-grid"></ul>
+            </div>
         </div>
     </div>
 
@@ -134,6 +148,19 @@
             <div style="display: flex; justify-content: center; gap: 15px;">
                 <button id="btnConfirmSave" class="btn" style="background-color: #1976d2;">Save</button>
                 <button id="btnCancelSave" class="btn" style="background-color: #424242;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="newFolderModal" class="modal hidden">
+        <div class="modal-content" style="width: 300px; height: auto; text-align: center;">
+            <h3>New Folder</h3>
+            <div class="input-group" style="margin: 20px 0;">
+                <input type="text" id="newFolderInput" placeholder="Enter folder name" style="width: 100%; padding: 8px; box-sizing: border-box;">
+            </div>
+            <div style="display: flex; justify-content: center; gap: 15px;">
+                <button id="btnConfirmNewFolder" class="btn" style="background-color: #f57f17;">Create</button>
+                <button id="btnCancelNewFolder" class="btn" style="background-color: #424242;">Cancel</button>
             </div>
         </div>
     </div>

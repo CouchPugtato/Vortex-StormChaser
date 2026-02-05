@@ -66,8 +66,16 @@ const currentPathDisplay = document.getElementById('currentPathDisplay');
 const btnSavePath = document.getElementById('btnSavePath');
 const btnOpenPath = document.getElementById('btnOpenPath');
 const openPathModal = document.getElementById('openPathModal');
-const pathFileList = document.getElementById('pathFileList');
+const folderList = document.getElementById('folderList');
+const fileList = document.getElementById('fileList');
+const foldersTitle = document.getElementById('foldersTitle');
+const filesTitle = document.getElementById('filesTitle');
+const pathDivider = document.getElementById('pathDivider');
 const closeModalBtn = document.querySelector('.close-modal');
+const btnNewFolderFromModal = document.getElementById('btnNewFolderFromModal');
+const btnNewPathFromModal = document.getElementById('btnNewPathFromModal');
+const btnPathBack = document.getElementById('btnPathBack');
+const openPathTitle = document.getElementById('openPathTitle');
 
 const deleteConfirmModal = document.getElementById('deleteConfirmModal');
 const btnConfirmDelete = document.getElementById('btnConfirmDelete');
@@ -87,6 +95,8 @@ const recentProjectsList = document.getElementById('recentProjectsList');
 let availableEvents = [];
 let editingEventIndex = -1;
 let currentPathName = null;
+let currentRoutinePath = '';
+let pendingDeleteIsFolder = false;
 
 function updatePathDisplay() {
     if (currentPathDisplay) {
@@ -163,8 +173,19 @@ function updatePathDisplay() {
     });
 })();
 
+let currentProjectName = 'Project';
+
 function handleProjectLoaded(data) {
     if (projectStartModal) projectStartModal.classList.add('hidden');
+
+    if (data.path) {
+        const parts = data.path.replace(/[\\/]$/, '').split(/[\\/]/);
+        if (parts.length > 1 && parts[parts.length-1] === 'vortex') {
+             currentProjectName = parts[parts.length-2];
+        } else {
+             currentProjectName = parts[parts.length-1];
+        }
+    }
 
     if (data.events && Array.isArray(data.events)) {
         availableEvents = data.events;
@@ -527,7 +548,7 @@ async function saveRoutineToDisk(name) {
 
     const filename = name.endsWith('.json') ? name : name + '.json';
     const imageBase64 = canvas.toDataURL('image/png');
-    const success = await window.electronAPI.saveRoutine(filename, JSON.stringify(exportData, null, 4), imageBase64);
+    const success = await window.electronAPI.saveRoutine(currentRoutinePath, filename, JSON.stringify(exportData, null, 4), imageBase64);
     if (success) {
         currentPathName = filename;
         updatePathDisplay();
@@ -598,70 +619,232 @@ if (btnNewPathFromModal) {
     };
 }
 
+const newFolderModal = document.getElementById('newFolderModal');
+const newFolderInput = document.getElementById('newFolderInput');
+const btnConfirmNewFolder = document.getElementById('btnConfirmNewFolder');
+const btnCancelNewFolder = document.getElementById('btnCancelNewFolder');
+
+if (btnNewFolderFromModal) {
+    btnNewFolderFromModal.onclick = () => {
+        newFolderInput.value = '';
+        newFolderModal.classList.remove('hidden');
+        newFolderInput.focus();
+    };
+}
+
+if (btnConfirmNewFolder) {
+    btnConfirmNewFolder.onclick = async () => {
+        const name = newFolderInput.value.trim();
+        if (name) {
+            const success = await window.electronAPI.createFolder(currentRoutinePath, name);
+            if (success) {
+                newFolderModal.classList.add('hidden');
+                await openPathDialog();
+            } else {
+                alert("Failed to create folder.");
+            }
+        } else {
+            alert("Please enter a valid folder name.");
+        }
+    };
+}
+
+if (btnCancelNewFolder) {
+    btnCancelNewFolder.onclick = () => {
+        newFolderModal.classList.add('hidden');
+    };
+}
+
+if (btnPathBack) {
+    btnPathBack.onclick = async () => {
+        if (!currentRoutinePath) return;
+        const parts = currentRoutinePath.split(/[\\/]/);
+        parts.pop();
+        currentRoutinePath = parts.join('/');
+        await openPathDialog();
+    };
+}
+
 async function openPathDialog() {
-    const routines = await window.electronAPI.listRoutines();
-    pathFileList.innerHTML = '';
+    const routines = await window.electronAPI.listRoutines(currentRoutinePath);
     
-    pathFileList.className = 'path-grid';
+    folderList.innerHTML = '';
+    fileList.innerHTML = '';
     
+    foldersTitle.style.display = 'none';
+    filesTitle.style.display = 'none';
+    pathDivider.style.display = 'none';
+    
+    if (currentRoutinePath) {
+        btnPathBack.classList.remove('hidden');
+        openPathTitle.innerText = `${currentProjectName}/${currentRoutinePath}`;
+        
+        btnPathBack.ondragover = (e) => {
+            e.preventDefault();
+            btnPathBack.style.backgroundColor = '#444';
+        };
+        btnPathBack.ondragleave = (e) => {
+             btnPathBack.style.backgroundColor = '';
+        };
+        btnPathBack.ondrop = async (e) => {
+            e.preventDefault();
+            btnPathBack.style.backgroundColor = '';
+            
+            const filename = e.dataTransfer.getData('text/plain');
+            if (filename) {
+                const parentPath = currentRoutinePath.split(/[\\/]/).slice(0, -1).join('/');
+                const success = await window.electronAPI.moveFile(currentRoutinePath, filename, parentPath);
+                if (success) {
+                    await openPathDialog();
+                } else {
+                    alert('Failed to move file.');
+                }
+            }
+        };
+
+    } else {
+        btnPathBack.classList.add('hidden');
+        openPathTitle.innerText = currentProjectName;
+        
+        btnPathBack.ondragover = null;
+        btnPathBack.ondrop = null;
+    }
+
     if (routines.length === 0) {
-        pathFileList.className = 'file-list';
+        fileList.className = 'file-list';
         const li = document.createElement('li');
         li.innerText = "No routines found.";
-        pathFileList.appendChild(li);
+        fileList.appendChild(li);
     } else {
-        routines.forEach(routine => {
-            const li = document.createElement('li');
-            li.className = 'path-card';
-            li.style.position = 'relative';
-
-            li.onclick = async () => {
-                await loadRoutine(routine.name);
-                openPathModal.classList.add('hidden');
-            };
-
-            const img = document.createElement('img');
-            if (routine.imagePath) {
-                img.src = routine.imagePath;
-            } else {
-                img.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
-                img.style.backgroundColor = '#333';
-            }
-            
-            const span = document.createElement('span');
-            span.innerText = routine.name.replace('.json', '');
-
-            const deleteBtn = document.createElement('div');
-            deleteBtn.className = 'delete-path-btn';
-            deleteBtn.innerHTML = '&#x2715;';
-            deleteBtn.title = 'Delete Path';
-            deleteBtn.onclick = (e) => {
-                e.stopPropagation();
-                pendingDeleteFilename = routine.name;
-                deleteConfirmModal.classList.remove('hidden');
-            };
-
-            li.appendChild(img);
-            li.appendChild(span);
-            li.appendChild(deleteBtn);
-            pathFileList.appendChild(li);
-        });
+        folderList.className = 'folder-grid';
+        fileList.className = 'path-grid';
+        
+        const folders = routines.filter(item => item.isDirectory);
+        const files = routines.filter(item => !item.isDirectory);
+        
+        if (folders.length > 0) {
+            foldersTitle.style.display = 'block';
+            folders.forEach(item => {
+                const li = createPathItemElement(item);
+                folderList.appendChild(li);
+            });
+        }
+        
+        if (files.length > 0) {
+            filesTitle.style.display = 'block';
+            files.forEach(item => {
+                const li = createPathItemElement(item);
+                fileList.appendChild(li);
+            });
+        }
+        
+        if (folders.length > 0 && files.length > 0) {
+            pathDivider.style.display = 'block';
+        }
     }
     
     openPathModal.classList.remove('hidden');
 }
 
+function createPathItemElement(item) {
+    const li = document.createElement('li');
+    li.className = 'path-card';
+    li.style.position = 'relative';
+
+    const deleteBtn = document.createElement('div');
+    deleteBtn.className = 'delete-path-btn';
+    deleteBtn.innerHTML = '&#x2715;';
+    deleteBtn.title = item.isDirectory ? 'Delete Folder' : 'Delete Path';
+    
+    deleteBtn.onclick = (e) => {
+        e.stopPropagation();
+        pendingDeleteFilename = item.name;
+        pendingDeleteIsFolder = item.isDirectory;
+        deleteConfirmModal.classList.remove('hidden');
+    };
+
+    const span = document.createElement('span');
+    span.innerText = item.isDirectory ? item.name : item.name.replace('.json', '');
+
+    if (item.isDirectory) {
+        li.classList.add('folder-card');
+        li.onclick = async () => {
+            currentRoutinePath = currentRoutinePath ? `${currentRoutinePath}/${item.name}` : item.name;
+            await openPathDialog();
+        };
+        
+        li.ondragover = (e) => {
+            e.preventDefault();
+            li.style.borderColor = '#fff';
+            li.style.backgroundColor = '#333';
+        };
+        li.ondragleave = (e) => {
+            li.style.borderColor = '';
+            li.style.backgroundColor = '';
+        };
+        li.ondrop = async (e) => {
+            e.preventDefault();
+            li.style.borderColor = '';
+            li.style.backgroundColor = '';
+            
+            const filename = e.dataTransfer.getData('text/plain');
+            if (filename) {
+                const targetFolder = currentRoutinePath ? `${currentRoutinePath}/${item.name}` : item.name;
+                const success = await window.electronAPI.moveFile(currentRoutinePath, filename, targetFolder);
+                if (success) {
+                    await openPathDialog();
+                } else {
+                    alert('Failed to move file.');
+                }
+            }
+        };
+
+    } else {
+        li.draggable = true;
+        li.ondragstart = (e) => {
+            e.dataTransfer.setData('text/plain', item.name);
+            e.dataTransfer.effectAllowed = 'move';
+        };
+
+        li.onclick = async () => {
+            await loadRoutine(item.name);
+            openPathModal.classList.add('hidden');
+        };
+
+        const img = document.createElement('img');
+        img.draggable = false;
+        if (item.imagePath) {
+            img.src = item.imagePath;
+        } else {
+            img.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+            img.style.backgroundColor = '#333';
+        }
+        li.appendChild(img);
+    }
+
+    li.appendChild(span);
+    li.appendChild(deleteBtn);
+    return li;
+}
+
 if (btnConfirmDelete) {
     btnConfirmDelete.addEventListener('click', async () => {
         if (pendingDeleteFilename) {
-            const success = await window.electronAPI.deleteRoutine(pendingDeleteFilename);
+            let success = false;
+            if (pendingDeleteIsFolder) {
+                success = await window.electronAPI.deleteFolder(currentRoutinePath, pendingDeleteFilename);
+            } else {
+                success = await window.electronAPI.deleteRoutine(currentRoutinePath, pendingDeleteFilename);
+            }
+
             if (success) {
                 await openPathDialog();
             } else {
-                alert('Failed to delete routine.');
+                alert('Failed to delete item.');
             }
             deleteConfirmModal.classList.add('hidden');
             pendingDeleteFilename = null;
+            pendingDeleteIsFolder = false;
         }
     });
 }
@@ -670,6 +853,7 @@ if (btnCancelDelete) {
     btnCancelDelete.addEventListener('click', () => {
         deleteConfirmModal.classList.add('hidden');
         pendingDeleteFilename = null;
+        pendingDeleteIsFolder = false;
     });
 }
 
@@ -686,7 +870,7 @@ window.addEventListener('click', (e) => {
 });
 
 async function loadRoutine(filename) {
-    const data = await window.electronAPI.loadRoutine(filename);
+    const data = await window.electronAPI.loadRoutine(currentRoutinePath, filename);
     if (!data) {
         alert('Failed to load routine.');
         return;

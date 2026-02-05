@@ -8,10 +8,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveSettings: (settings) => ipcRenderer.invoke('settings:save', settings),
   
   
-  listRoutines: () => ipcRenderer.invoke('routines:list'),
-  saveRoutine: (filename, content, imageBase64) => ipcRenderer.invoke('routines:save', filename, content, imageBase64),
-  loadRoutine: (filename) => ipcRenderer.invoke('routines:load', filename),
-  deleteRoutine: (filename) => ipcRenderer.invoke('routines:delete', filename),
+  listRoutines: (subfolder) => ipcRenderer.invoke('routines:list', subfolder),
+  saveRoutine: (subfolder, filename, content, imageBase64) => ipcRenderer.invoke('routines:save', subfolder, filename, content, imageBase64),
+  loadRoutine: (subfolder, filename) => ipcRenderer.invoke('routines:load', subfolder, filename),
+  deleteRoutine: (subfolder, filename) => ipcRenderer.invoke('routines:delete', subfolder, filename),
+  createFolder: (subfolder, folderName) => ipcRenderer.invoke('routines:createFolder', subfolder, folderName),
+  deleteFolder: (subfolder, folderName) => ipcRenderer.invoke('routines:deleteFolder', subfolder, folderName),
+  moveFile: (sourceSubfolder, filename, targetSubfolder) => ipcRenderer.invoke('routines:moveFile', sourceSubfolder, filename, targetSubfolder),
 
   getRecentProjects: () => ipcRenderer.invoke('projects:getRecent'),
   openProject: (path) => ipcRenderer.invoke('projects:open', path),

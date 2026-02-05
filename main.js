@@ -88,9 +88,11 @@ async function handleCreateProject(mainWindow) {
             const settingsPath = path.join(projectPath, 'settings.json');
             const imagesDir = path.join(projectPath, 'field_images');
             const routinesDir = path.join(projectPath, 'vortex routines');
+            const pathImagesDir = path.join(projectPath, 'path_images');
 
             if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir);
             if (!fs.existsSync(routinesDir)) fs.mkdirSync(routinesDir);
+            if (!fs.existsSync(pathImagesDir)) fs.mkdirSync(pathImagesDir);
 
             const defaultEvents = ["Intake", "Shoot", "Stop", "Balance"];
             if (!fs.existsSync(eventsPath)) {
@@ -305,29 +307,65 @@ ipcMain.handle('settings:save', async (event, settings) => {
 });
 
 
-ipcMain.handle('routines:list', async () => {
+ipcMain.handle('routines:list', async (event, subfolder = '') => {
     if (!currentProjectPath) return [];
     try {
-        const routinesDir = path.join(currentProjectPath, 'vortex routines');
+        const routinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const imagesDir = path.join(currentProjectPath, 'path_images', subfolder);
+
+        if (!fs.existsSync(imagesDir)) {
+             try { fs.mkdirSync(imagesDir, { recursive: true }); } catch(e) {}
+        }
+
         if (fs.existsSync(routinesDir)) {
-            const files = fs.readdirSync(routinesDir);
-            return files.filter(file => file.endsWith('.json')).map(file => {
+            const items = fs.readdirSync(routinesDir, { withFileTypes: true });
+            const results = [];
+
+            items.filter(dirent => dirent.isDirectory()).forEach(dirent => {
+                results.push({
+                    name: dirent.name,
+                    isDirectory: true
+                });
+            });
+
+            items.filter(dirent => !dirent.isDirectory() && dirent.name.endsWith('.json')).forEach(dirent => {
+                const file = dirent.name;
                 const imgName = file.replace(/\.json$/, '.png');
-                const imgPath = path.join(routinesDir, imgName);
-                let imagePath = null;
-                if (fs.existsSync(imgPath)) {
+                
+                const oldImgPath = path.join(routinesDir, imgName);
+                const newImgPath = path.join(imagesDir, imgName);
+                
+                if (fs.existsSync(oldImgPath) && !fs.existsSync(newImgPath)) {
                     try {
-                        const data = fs.readFileSync(imgPath);
+                        fs.renameSync(oldImgPath, newImgPath);
+                    } catch (err) {
+                        console.error('Error migrating image:', err);
+                    }
+                }
+
+                let imagePath = null;
+                if (fs.existsSync(newImgPath)) {
+                    try {
+                        const data = fs.readFileSync(newImgPath);
                         imagePath = `data:image/png;base64,${data.toString('base64')}`;
                     } catch (err) {
                         console.error('Error reading image thumbnail:', err);
                     }
+                } else if (fs.existsSync(oldImgPath)) {
+                    try {
+                        const data = fs.readFileSync(oldImgPath);
+                        imagePath = `data:image/png;base64,${data.toString('base64')}`;
+                    } catch (err) {}
                 }
-                return {
+
+                results.push({
                     name: file,
-                    imagePath: imagePath
-                };
+                    imagePath: imagePath,
+                    isDirectory: false
+                });
             });
+            
+            return results;
         }
     } catch (e) {
         console.error('Failed to list routines:', e);
@@ -335,18 +373,63 @@ ipcMain.handle('routines:list', async () => {
     return [];
 });
 
-ipcMain.handle('routines:save', async (event, filename, content, imageBase64) => {
+ipcMain.handle('routines:createFolder', async (event, subfolder, folderName) => {
     if (!currentProjectPath) return false;
     try {
-        const routinesDir = path.join(currentProjectPath, 'vortex routines');
-        if (!fs.existsSync(routinesDir)) fs.mkdirSync(routinesDir);
+        const targetDir = path.join(currentProjectPath, 'vortex routines', subfolder, folderName);
+        const targetImgDir = path.join(currentProjectPath, 'path_images', subfolder, folderName);
+        
+        let success = false;
+        if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+            success = true;
+        }
+        
+        if (!fs.existsSync(targetImgDir)) {
+            fs.mkdirSync(targetImgDir, { recursive: true });
+        }
+        
+        return success;
+    } catch (e) {
+        console.error('Failed to create folder:', e);
+        return false;
+    }
+});
+
+ipcMain.handle('routines:deleteFolder', async (event, subfolder, folderName) => {
+    if (!currentProjectPath) return false;
+    try {
+        const targetDir = path.join(currentProjectPath, 'vortex routines', subfolder, folderName);
+        const targetImgDir = path.join(currentProjectPath, 'path_images', subfolder, folderName);
+        
+        if (fs.existsSync(targetDir)) {
+            fs.rmSync(targetDir, { recursive: true, force: true });
+        }
+        if (fs.existsSync(targetImgDir)) {
+            fs.rmSync(targetImgDir, { recursive: true, force: true });
+        }
+        return true;
+    } catch (e) {
+        console.error('Failed to delete folder:', e);
+        return false;
+    }
+});
+
+ipcMain.handle('routines:save', async (event, subfolder, filename, content, imageBase64) => {
+    if (!currentProjectPath) return false;
+    try {
+        const routinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const imagesDir = path.join(currentProjectPath, 'path_images', subfolder);
+        
+        if (!fs.existsSync(routinesDir)) fs.mkdirSync(routinesDir, { recursive: true });
+        if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir, { recursive: true });
         
         const filePath = path.join(routinesDir, filename);
         fs.writeFileSync(filePath, content);
 
         if (imageBase64) {
             const base64Data = imageBase64.replace(/^data:image\/png;base64,/, "");
-            const imgPath = path.join(routinesDir, filename.replace(/\.json$/, '.png'));
+            const imgPath = path.join(imagesDir, filename.replace(/\.json$/, '.png'));
             fs.writeFileSync(imgPath, base64Data, 'base64');
         }
 
@@ -357,10 +440,10 @@ ipcMain.handle('routines:save', async (event, filename, content, imageBase64) =>
     }
 });
 
-ipcMain.handle('routines:load', async (event, filename) => {
+ipcMain.handle('routines:load', async (event, subfolder, filename) => {
     if (!currentProjectPath) return null;
     try {
-        const filePath = path.join(currentProjectPath, 'vortex routines', filename);
+        const filePath = path.join(currentProjectPath, 'vortex routines', subfolder, filename);
         if (fs.existsSync(filePath)) {
             const data = fs.readFileSync(filePath, 'utf-8');
             return JSON.parse(data);
@@ -371,19 +454,65 @@ ipcMain.handle('routines:load', async (event, filename) => {
     return null;
 });
 
-ipcMain.handle('routines:delete', async (event, filename) => {
+ipcMain.handle('routines:delete', async (event, subfolder, filename) => {
     if (!currentProjectPath) return false;
     try {
-        const routinesDir = path.join(currentProjectPath, 'vortex routines');
+        const routinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const imagesDir = path.join(currentProjectPath, 'path_images', subfolder);
+        
         const filePath = path.join(routinesDir, filename);
-        const imgPath = path.join(routinesDir, filename.replace(/\.json$/, '.png'));
+        const imgPath = path.join(imagesDir, filename.replace(/\.json$/, '.png'));
+        const oldImgPath = path.join(routinesDir, filename.replace(/\.json$/, '.png'));
 
         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
         if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+        if (fs.existsSync(oldImgPath)) fs.unlinkSync(oldImgPath);
         
         return true;
     } catch (e) {
         console.error('Failed to delete routine:', e);
+        return false;
+    }
+});
+
+ipcMain.handle('routines:moveFile', async (event, sourceSubfolder, filename, targetSubfolder) => {
+    if (!currentProjectPath) return false;
+    try {
+        const sourceDir = path.join(currentProjectPath, 'vortex routines', sourceSubfolder);
+        const targetDir = path.join(currentProjectPath, 'vortex routines', targetSubfolder);
+        
+        const sourceImgDir = path.join(currentProjectPath, 'path_images', sourceSubfolder);
+        const targetImgDir = path.join(currentProjectPath, 'path_images', targetSubfolder);
+
+        if (!fs.existsSync(targetDir)) {
+             fs.mkdirSync(targetDir, { recursive: true });
+        }
+        
+        if (!fs.existsSync(targetImgDir)) {
+             fs.mkdirSync(targetImgDir, { recursive: true });
+        }
+
+        const sourceFile = path.join(sourceDir, filename);
+        const targetFile = path.join(targetDir, filename);
+        
+        const sourceImg = path.join(sourceImgDir, filename.replace(/\.json$/, '.png'));
+        const targetImg = path.join(targetImgDir, filename.replace(/\.json$/, '.png'));
+        
+        const legacySourceImg = path.join(sourceDir, filename.replace(/\.json$/, '.png'));
+
+        if (fs.existsSync(sourceFile)) {
+            fs.renameSync(sourceFile, targetFile);
+        }
+        
+        if (fs.existsSync(sourceImg)) {
+            fs.renameSync(sourceImg, targetImg);
+        } else if (fs.existsSync(legacySourceImg)) {
+            fs.renameSync(legacySourceImg, targetImg);
+        }
+
+        return true;
+    } catch (e) {
+        console.error('Failed to move file:', e);
         return false;
     }
 });
