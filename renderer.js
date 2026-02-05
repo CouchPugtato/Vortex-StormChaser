@@ -74,6 +74,11 @@ const btnConfirmDelete = document.getElementById('btnConfirmDelete');
 const btnCancelDelete = document.getElementById('btnCancelDelete');
 let pendingDeleteFilename = null;
 
+const savePathModal = document.getElementById('savePathModal');
+const savePathInput = document.getElementById('savePathInput');
+const btnConfirmSave = document.getElementById('btnConfirmSave');
+const btnCancelSave = document.getElementById('btnCancelSave');
+
 const projectStartModal = document.getElementById('projectStartModal');
 const btnNewProject = document.getElementById('btnNewProject');
 const btnOpenExistingProject = document.getElementById('btnOpenExistingProject');
@@ -506,6 +511,42 @@ btnPlay.addEventListener('click', () => {
 });
 
 
+async function saveRoutineToDisk(name) {
+    const exportData = {
+        points: points.map((p, i) => {
+            const coords = getFieldCoordinates(p.x, p.y);
+            return {
+                id: i + 1,
+                x: Number(coords.x.toFixed(4)),
+                y: Number(coords.y.toFixed(4)),
+                rotation: Number((p.rotation * 180 / Math.PI).toFixed(2))
+            };
+        }),
+        events: events
+    };
+
+    const filename = name.endsWith('.json') ? name : name + '.json';
+    const imageBase64 = canvas.toDataURL('image/png');
+    const success = await window.electronAPI.saveRoutine(filename, JSON.stringify(exportData, null, 4), imageBase64);
+    if (success) {
+        currentPathName = filename;
+        updatePathDisplay();
+        
+        const originalText = btnSavePath.innerText;
+        const originalColor = btnSavePath.style.backgroundColor;
+        
+        btnSavePath.innerText = "Saved✓";
+        btnSavePath.style.backgroundColor = "#2e7d32";
+        
+        setTimeout(() => {
+            btnSavePath.innerText = originalText;
+            btnSavePath.style.backgroundColor = originalColor;
+        }, 1000);
+    } else {
+        alert('Failed to save path. Make sure a project is open.');
+    }
+}
+
 if (btnSavePath) {
     btnSavePath.addEventListener('click', async () => {
         if (points.length === 0) {
@@ -513,52 +554,48 @@ if (btnSavePath) {
             return;
         }
 
-        let name = currentPathName;
-        if (!name) {
-            const input = prompt('Enter path name:');
-            if (!input) return; 
-            name = input.trim();
-            if (!name) return;
-        }
-
-        const exportData = {
-            points: points.map((p, i) => {
-                const coords = getFieldCoordinates(p.x, p.y);
-                return {
-                    id: i + 1,
-                    x: Number(coords.x.toFixed(4)),
-                    y: Number(coords.y.toFixed(4)),
-                    rotation: Number((p.rotation * 180 / Math.PI).toFixed(2))
-                };
-            }),
-            events: events
-        };
-
-        const filename = name.endsWith('.json') ? name : name + '.json';
-        const imageBase64 = canvas.toDataURL('image/png');
-        const success = await window.electronAPI.saveRoutine(filename, JSON.stringify(exportData, null, 4), imageBase64);
-        if (success) {
-            currentPathName = filename;
-            updatePathDisplay();
-            
-            const originalText = btnSavePath.innerText;
-            const originalColor = btnSavePath.style.backgroundColor;
-            
-            btnSavePath.innerText = "Saved✓";
-            btnSavePath.style.backgroundColor = "#2e7d32";
-            
-            setTimeout(() => {
-                btnSavePath.innerText = originalText;
-                btnSavePath.style.backgroundColor = originalColor;
-            }, 1000);
+        if (!currentPathName) {
+            savePathInput.value = '';
+            savePathModal.classList.remove('hidden');
+            savePathInput.focus();
         } else {
-            alert('Failed to save path. Make sure a project is open.');
+            await saveRoutineToDisk(currentPathName);
         }
     });
 }
 
+if (btnConfirmSave) {
+    btnConfirmSave.onclick = async () => {
+        const name = savePathInput.value.trim();
+        if (name) {
+            await saveRoutineToDisk(name);
+            savePathModal.classList.add('hidden');
+        } else {
+            alert('Please enter a valid name.');
+        }
+    };
+}
+
+if (btnCancelSave) {
+    btnCancelSave.onclick = () => {
+        savePathModal.classList.add('hidden');
+    };
+}
+
 if (btnOpenPath) {
     btnOpenPath.addEventListener('click', openPathDialog);
+}
+
+if (btnNewPathFromModal) {
+    btnNewPathFromModal.onclick = () => {
+        points = [];
+        events = [];
+        currentPathName = null;
+        updatePathDisplay();
+        draw();
+        updatePointsList();
+        openPathModal.classList.add('hidden');
+    };
 }
 
 async function openPathDialog() {

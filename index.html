@@ -89,6 +89,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h3>Open Path</h3>
+                <button id="btnNewPathFromModal" class="btn" style="margin-left: auto; margin-right: 20px; background-color: #2e7d32; padding: 5px 15px;">New Path</button>
                 <span class="close-modal" id="closeOpenPathModal">&times;</span>
             </div>
             <ul id="pathFileList" class="file-list">
@@ -120,6 +121,19 @@
             <div style="display: flex; justify-content: center; gap: 15px;">
                 <button id="btnConfirmDelete" class="btn" style="background-color: #d32f2f;">Delete</button>
                 <button id="btnCancelDelete" class="btn" style="background-color: #424242;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="savePathModal" class="modal hidden">
+        <div class="modal-content" style="width: 300px; height: auto; text-align: center;">
+            <h3>Save Path As</h3>
+            <div class="input-group" style="margin: 20px 0;">
+                <input type="text" id="savePathInput" placeholder="Enter path name" style="width: 100%; padding: 8px; box-sizing: border-box;">
+            </div>
+            <div style="display: flex; justify-content: center; gap: 15px;">
+                <button id="btnConfirmSave" class="btn" style="background-color: #1976d2;">Save</button>
+                <button id="btnCancelSave" class="btn" style="background-color: #424242;">Cancel</button>
             </div>
         </div>
     </div>
