@@ -558,7 +558,7 @@ async function saveRoutineToDisk(name) {
         const originalText = btnSavePath.innerText;
         const originalColor = btnSavePath.style.backgroundColor;
         
-        btnSavePath.innerText = "Saved✓";
+        btnSavePath.innerText = "Saved ✓";
         btnSavePath.style.backgroundColor = "#2e7d32";
         
         setTimeout(() => {

@@ -1,5 +1,5 @@
 {
-  "name": "vortex-stormchaser-field-mapper",
+  "name": "vortex-stormchaser",
   "version": "1.0.0",
   "description": "FRC Field Mapper Application",
   "main": "main.js",
