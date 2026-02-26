@@ -5,6 +5,7 @@ node_modules/
 dist/
 out/
 build/
+release-builds/
 
 # Misc
 .DS_Store
