@@ -812,6 +812,20 @@ function createPathItemElement(item) {
         };
 
     } else {
+        const duplicateBtn = document.createElement('div');
+        duplicateBtn.className = 'duplicate-path-btn';
+        duplicateBtn.innerHTML = '&#x29C9;';
+        duplicateBtn.title = 'Duplicate Path';
+        duplicateBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const duplicatedFilename = await window.electronAPI.duplicateRoutine(currentRoutinePath, item.name);
+            if (!duplicatedFilename) {
+                alert('Failed to duplicate path.');
+                return;
+            }
+            await openPathDialog();
+        };
+
         li.draggable = true;
         li.ondragstart = (e) => {
             e.dataTransfer.setData('text/plain', item.name);
@@ -832,6 +846,7 @@ function createPathItemElement(item) {
             img.style.backgroundColor = '#333';
         }
         li.appendChild(img);
+        li.appendChild(duplicateBtn);
     }
 
     li.appendChild(span);

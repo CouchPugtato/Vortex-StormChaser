@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveRoutine: (subfolder, filename, content, imageBase64) => ipcRenderer.invoke('routines:save', subfolder, filename, content, imageBase64),
   loadRoutine: (subfolder, filename) => ipcRenderer.invoke('routines:load', subfolder, filename),
   deleteRoutine: (subfolder, filename) => ipcRenderer.invoke('routines:delete', subfolder, filename),
+  duplicateRoutine: (subfolder, filename) => ipcRenderer.invoke('routines:duplicate', subfolder, filename),
   createFolder: (subfolder, folderName) => ipcRenderer.invoke('routines:createFolder', subfolder, folderName),
   deleteFolder: (subfolder, folderName) => ipcRenderer.invoke('routines:deleteFolder', subfolder, folderName),
   moveFile: (sourceSubfolder, filename, targetSubfolder) => ipcRenderer.invoke('routines:moveFile', sourceSubfolder, filename, targetSubfolder),

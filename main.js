@@ -517,6 +517,47 @@ ipcMain.handle('routines:moveFile', async (event, sourceSubfolder, filename, tar
     }
 });
 
+ipcMain.handle('routines:duplicate', async (event, subfolder, filename) => {
+    if (!currentProjectPath) return null;
+    try {
+        const routinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const imagesDir = path.join(currentProjectPath, 'path_images', subfolder);
+        const sourceFile = path.join(routinesDir, filename);
+        const sourceImg = path.join(imagesDir, filename.replace(/\.json$/, '.png'));
+        const legacySourceImg = path.join(routinesDir, filename.replace(/\.json$/, '.png'));
+
+        if (!fs.existsSync(sourceFile)) {
+            return null;
+        }
+
+        if (!fs.existsSync(routinesDir)) fs.mkdirSync(routinesDir, { recursive: true });
+        if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir, { recursive: true });
+
+        const baseName = filename.replace(/\.json$/, '');
+        let duplicateName = `${baseName} copy.json`;
+        let counter = 2;
+        while (fs.existsSync(path.join(routinesDir, duplicateName))) {
+            duplicateName = `${baseName} copy ${counter}.json`;
+            counter++;
+        }
+
+        const targetFile = path.join(routinesDir, duplicateName);
+        fs.copyFileSync(sourceFile, targetFile);
+
+        const targetImg = path.join(imagesDir, duplicateName.replace(/\.json$/, '.png'));
+        if (fs.existsSync(sourceImg)) {
+            fs.copyFileSync(sourceImg, targetImg);
+        } else if (fs.existsSync(legacySourceImg)) {
+            fs.copyFileSync(legacySourceImg, targetImg);
+        }
+
+        return duplicateName;
+    } catch (e) {
+        console.error('Failed to duplicate routine:', e);
+        return null;
+    }
+});
+
 ipcMain.handle('projects:getRecent', () => {
     return getRecentProjects();
 });
