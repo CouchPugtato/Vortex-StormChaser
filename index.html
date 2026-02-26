@@ -79,9 +79,17 @@
 
             <div class="controls-section points-section">
                 <h3>Points</h3>
+                <div class="path-tie-box">
+                    <span class="path-tie-label">Start tied to: <strong id="startTieDisplay">None</strong></span>
+                    <button id="btnSelectStartTie" class="btn path-tie-btn">Choose</button>
+                </div>
                 
                 <ul id="pointsList" class="points-list">
                 </ul>
+                <div class="path-tie-box">
+                    <span class="path-tie-label">End tied to: <strong id="endTieDisplay">None</strong></span>
+                    <button id="btnSelectEndTie" class="btn path-tie-btn">Choose</button>
+                </div>
             </div>
         </div>
     </div>
@@ -162,6 +170,27 @@
             <div style="display: flex; justify-content: center; gap: 15px;">
                 <button id="btnConfirmNewFolder" class="btn" style="background-color: #1976d2;">Create</button>
                 <button id="btnCancelNewFolder" class="btn" style="background-color: #424242;">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="tiePathModal" class="modal hidden">
+        <div class="modal-content" style="width: 70%; max-width: 900px;">
+            <div class="modal-header">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                    <button id="tiePathBack" class="btn hidden" style="padding: 5px 10px;">&larr;</button>
+                    <h2 id="tiePathTitle" style="margin: 0; font-size: 1.5em;">Select Tied Path</h2>
+                </div>
+                <span class="close-modal" id="closeTiePathModal">&times;</span>
+            </div>
+            <div>
+                <h4 id="tieFoldersTitle" style="margin: 10px 0 5px 0; color: #aaa; display: none;">Folders</h4>
+                <ul id="tieFolderList" class="path-grid"></ul>
+            </div>
+            <hr id="tiePathDivider" style="border: 0; border-top: 1px solid #444; margin: 20px 0; display: none;">
+            <div>
+                <h4 id="tieFilesTitle" style="margin: 10px 0 5px 0; color: #aaa; display: none;">Paths</h4>
+                <ul id="tiePathList" class="path-grid"></ul>
             </div>
         </div>
     </div>

@@ -76,6 +76,7 @@ canvas {
 
 .controls-section {
     margin-bottom: 20px;
+    min-height: 0;
 }
 
 .controls-section h3 {
@@ -158,15 +159,57 @@ input:focus, textarea:focus, select:focus {
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    margin-bottom: 0;
+    min-height: 0;
+}
+
+.path-tie-box {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid #333;
+    border-radius: 4px;
+    background-color: #141414;
+}
+
+.path-tie-label {
+    color: #ddd;
+    font-size: 0.9em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.path-tie-btn {
+    flex: 0 0 auto;
+    padding: 5px 10px;
+    text-transform: none;
 }
 
 .points-list {
     list-style: none;
     padding: 0;
-    margin: 10px 0 0 0;
+    margin: 10px 0;
     overflow-y: auto;
-    flex: 1;
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: calc(100% - 96px);
     border-top: 1px solid #333;
+}
+
+#tiePathList {
+    max-height: 60vh;
+    overflow-y: auto;
+    margin: 0;
+}
+
+.tie-option-card {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 72px;
 }
 
 .points-list li {

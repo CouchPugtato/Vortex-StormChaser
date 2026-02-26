@@ -76,6 +76,19 @@ const btnNewFolderFromModal = document.getElementById('btnNewFolderFromModal');
 const btnNewPathFromModal = document.getElementById('btnNewPathFromModal');
 const btnPathBack = document.getElementById('btnPathBack');
 const openPathTitle = document.getElementById('openPathTitle');
+const startTieDisplay = document.getElementById('startTieDisplay');
+const endTieDisplay = document.getElementById('endTieDisplay');
+const btnSelectStartTie = document.getElementById('btnSelectStartTie');
+const btnSelectEndTie = document.getElementById('btnSelectEndTie');
+const tiePathModal = document.getElementById('tiePathModal');
+const tiePathTitle = document.getElementById('tiePathTitle');
+const tiePathBack = document.getElementById('tiePathBack');
+const tiePathList = document.getElementById('tiePathList');
+const tieFolderList = document.getElementById('tieFolderList');
+const tieFoldersTitle = document.getElementById('tieFoldersTitle');
+const tieFilesTitle = document.getElementById('tieFilesTitle');
+const tiePathDivider = document.getElementById('tiePathDivider');
+const closeTiePathModal = document.getElementById('closeTiePathModal');
 
 const deleteConfirmModal = document.getElementById('deleteConfirmModal');
 const btnConfirmDelete = document.getElementById('btnConfirmDelete');
@@ -99,12 +112,51 @@ let editingPointCancelTimer = null;
 let currentPathName = null;
 let currentRoutinePath = '';
 let pendingDeleteIsFolder = false;
+let pathTies = { start: null, end: null };
+let tieSelectionEndpoint = null;
+let isApplyingTieSync = false;
+let tieBrowserPath = '';
 
 function updatePathDisplay() {
     if (currentPathDisplay) {
         currentPathDisplay.innerText = `Current Path: ${currentPathName || 'Untitled'}`;
     }
 }
+
+function normalizeRoutineFilename(name) {
+    if (!name || typeof name !== 'string') return null;
+    const trimmed = name.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (!trimmed) return null;
+    return trimmed.endsWith('.json') ? trimmed : `${trimmed}.json`;
+}
+
+function getCurrentRoutineReference() {
+    if (!currentPathName) return null;
+    return normalizeRoutineFilename(currentRoutinePath ? `${currentRoutinePath}/${currentPathName}` : currentPathName);
+}
+
+function parseRoutineReference(ref) {
+    const normalized = normalizeRoutineFilename(ref);
+    if (!normalized) return null;
+    if (!normalized.includes('/')) {
+        return { subfolder: currentRoutinePath || '', filename: normalized };
+    }
+    const parts = normalized.split('/');
+    const filename = parts.pop();
+    const subfolder = parts.join('/');
+    return { subfolder, filename };
+}
+
+function updateTieDisplay() {
+    if (startTieDisplay) {
+        startTieDisplay.innerText = pathTies.start ? pathTies.start.replace(/\.json$/, '') : 'None';
+    }
+    if (endTieDisplay) {
+        endTieDisplay.innerText = pathTies.end ? pathTies.end.replace(/\.json$/, '') : 'None';
+    }
+}
+
+updateTieDisplay();
 
 (async () => {
     if (recentProjectsList) {
@@ -218,8 +270,10 @@ function handleProjectLoaded(data) {
     
     points = [];
     events = [];
+    pathTies = { start: null, end: null };
     
     draw();
+    updateTieDisplay();
     updatePointsList();
 
     openPathDialog();
@@ -453,12 +507,26 @@ window.addEventListener('mousemove', (e) => {
 });
 
 window.addEventListener('mouseup', () => {
+    const wasDraggingPoint = isDraggingPoint;
+    const wasDraggingRotation = isDraggingRotation;
+    const releasedPointIndex = draggingPointIndex;
+    const lastPointIndex = points.length - 1;
+
     isDraggingCrop = false;
     isDraggingPoint = false;
     isDraggingRotation = false;
     isDraggingEvent = false;
     draggingPointIndex = -1;
     draggingEventIndex = -1;
+
+    if ((wasDraggingPoint || wasDraggingRotation) && releasedPointIndex !== -1) {
+        if (releasedPointIndex === 0) {
+            queueTieSync('start');
+        }
+        if (releasedPointIndex === lastPointIndex) {
+            queueTieSync('end');
+        }
+    }
 });
 
 canvas.addEventListener('contextmenu', (e) => {
@@ -555,7 +623,11 @@ async function saveRoutineToDisk(name) {
                 rotation: Number((p.rotation * 180 / Math.PI).toFixed(2))
             };
         }),
-        events: events
+        events: events,
+        ties: {
+            start: pathTies.start || null,
+            end: pathTies.end || null
+        }
     };
 
     const filename = name.endsWith('.json') ? name : name + '.json';
@@ -564,6 +636,7 @@ async function saveRoutineToDisk(name) {
     if (success) {
         currentPathName = filename;
         updatePathDisplay();
+        await ensureReciprocalTiesAfterSave();
         
         const originalText = btnSavePath.innerText;
         const originalColor = btnSavePath.style.backgroundColor;
@@ -619,12 +692,42 @@ if (btnOpenPath) {
     btnOpenPath.addEventListener('click', openPathDialog);
 }
 
+if (btnSelectStartTie) {
+    btnSelectStartTie.onclick = async () => {
+        await openTiePathSelector('start');
+    };
+}
+
+if (btnSelectEndTie) {
+    btnSelectEndTie.onclick = async () => {
+        await openTiePathSelector('end');
+    };
+}
+
+if (closeTiePathModal) {
+    closeTiePathModal.onclick = () => {
+        closeTiePathSelector();
+    };
+}
+
+if (tiePathBack) {
+    tiePathBack.onclick = async () => {
+        if (!tieBrowserPath) return;
+        const parts = tieBrowserPath.split('/');
+        parts.pop();
+        tieBrowserPath = parts.join('/');
+        await renderTiePathSelector();
+    };
+}
+
 if (btnNewPathFromModal) {
     btnNewPathFromModal.onclick = () => {
         points = [];
         events = [];
         currentPathName = null;
+        pathTies = { start: null, end: null };
         updatePathDisplay();
+        updateTieDisplay();
         draw();
         updatePointsList();
         openPathModal.classList.add('hidden');
@@ -756,6 +859,252 @@ async function openPathDialog() {
     }
     
     openPathModal.classList.remove('hidden');
+}
+
+function getEndpointFieldPoint(endpoint) {
+    if (points.length === 0) return null;
+    const isStart = endpoint === 'start';
+    const index = isStart ? 0 : points.length - 1;
+    const p = points[index];
+    if (!p) return null;
+    const coords = getFieldCoordinates(p.x, p.y);
+    return {
+        x: Number(coords.x.toFixed(4)),
+        y: Number(coords.y.toFixed(4)),
+        rotation: Number((p.rotation * 180 / Math.PI).toFixed(2))
+    };
+}
+
+async function syncTiedEndpoint(endpoint) {
+    if (isApplyingTieSync) return;
+    if (points.length === 0) return;
+    if (endpoint !== 'start' && endpoint !== 'end') return;
+
+    const tiedRef = normalizeRoutineFilename(pathTies[endpoint]);
+    const currentRef = getCurrentRoutineReference();
+    if (!tiedRef || tiedRef === currentRef) return;
+
+    const sourcePoint = getEndpointFieldPoint(endpoint);
+    if (!sourcePoint) return;
+
+    const tiedLocation = parseRoutineReference(tiedRef);
+    if (!tiedLocation) return;
+
+    const tiedData = await window.electronAPI.loadRoutine(tiedLocation.subfolder, tiedLocation.filename);
+    if (!tiedData || !Array.isArray(tiedData.points) || tiedData.points.length === 0) return;
+
+    const targetIndex = endpoint === 'start' ? tiedData.points.length - 1 : 0;
+    const targetPoint = tiedData.points[targetIndex] || {};
+
+    const changed =
+        Number(targetPoint.x) !== sourcePoint.x ||
+        Number(targetPoint.y) !== sourcePoint.y ||
+        Number(targetPoint.rotation || 0) !== sourcePoint.rotation;
+
+    if (!changed) return;
+
+    tiedData.points[targetIndex] = {
+        ...targetPoint,
+        x: sourcePoint.x,
+        y: sourcePoint.y,
+        rotation: sourcePoint.rotation
+    };
+
+    isApplyingTieSync = true;
+    try {
+        await window.electronAPI.saveRoutine(
+            tiedLocation.subfolder,
+            tiedLocation.filename,
+            JSON.stringify(tiedData, null, 4),
+            null
+        );
+    } finally {
+        isApplyingTieSync = false;
+    }
+}
+
+function queueTieSync(endpoint) {
+    syncTiedEndpoint(endpoint).catch((error) => {
+        console.error('Failed to sync tied endpoint:', error);
+    });
+}
+
+function closeTiePathSelector() {
+    tieSelectionEndpoint = null;
+    tieBrowserPath = '';
+    if (tiePathModal) {
+        tiePathModal.classList.add('hidden');
+    }
+}
+
+function createTieOptionCard(label, imagePath, onSelect) {
+    const li = document.createElement('li');
+    li.className = 'path-card tie-option-card';
+    li.onclick = onSelect;
+
+    if (imagePath) {
+        const img = document.createElement('img');
+        img.src = imagePath;
+        img.draggable = false;
+        li.appendChild(img);
+    }
+
+    const span = document.createElement('span');
+    span.innerText = label;
+    li.appendChild(span);
+    return li;
+}
+
+async function setReciprocalTie(targetRef, endpoint) {
+    const currentRef = getCurrentRoutineReference();
+    const targetLocation = parseRoutineReference(targetRef);
+    if (!currentRef || !targetLocation) return;
+
+    const targetData = await window.electronAPI.loadRoutine(targetLocation.subfolder, targetLocation.filename);
+    if (!targetData) return;
+    if (!targetData.ties || typeof targetData.ties !== 'object') {
+        targetData.ties = { start: null, end: null };
+    }
+
+    if (endpoint === 'start') {
+        targetData.ties.end = currentRef;
+    } else {
+        targetData.ties.start = currentRef;
+    }
+
+    await window.electronAPI.saveRoutine(
+        targetLocation.subfolder,
+        targetLocation.filename,
+        JSON.stringify(targetData, null, 4),
+        null
+    );
+}
+
+async function ensureReciprocalTiesAfterSave() {
+    const tiesToPersist = [
+        { endpoint: 'start', ref: normalizeRoutineFilename(pathTies.start) },
+        { endpoint: 'end', ref: normalizeRoutineFilename(pathTies.end) }
+    ];
+
+    for (const tie of tiesToPersist) {
+        if (!tie.ref) continue;
+        await setReciprocalTie(tie.ref, tie.endpoint);
+    }
+}
+
+async function snapCurrentEndpointToTie(endpoint) {
+    if (endpoint !== 'start' && endpoint !== 'end') return;
+    if (!currentImage) return;
+
+    const tiedRef = normalizeRoutineFilename(pathTies[endpoint]);
+    const tiedLocation = parseRoutineReference(tiedRef);
+    if (!tiedLocation) return;
+
+    const tiedData = await window.electronAPI.loadRoutine(tiedLocation.subfolder, tiedLocation.filename);
+    if (!tiedData || !Array.isArray(tiedData.points) || tiedData.points.length === 0) return;
+
+    const sourceIndex = endpoint === 'start' ? tiedData.points.length - 1 : 0;
+    const sourcePoint = tiedData.points[sourceIndex];
+    if (!sourcePoint) return;
+
+    const imgPos = getFieldCoordinatesInverse(sourcePoint.x, sourcePoint.y);
+    const clampedX = Math.max(0, Math.min(currentImage.width, imgPos.x));
+    const clampedY = Math.max(0, Math.min(currentImage.height, imgPos.y));
+    const rotationRad = (Number(sourcePoint.rotation) || 0) * Math.PI / 180;
+
+    if (points.length === 0) {
+        points.push({ x: clampedX, y: clampedY, rotation: rotationRad });
+    } else {
+        const targetIndex = endpoint === 'start' ? 0 : points.length - 1;
+        points[targetIndex].x = clampedX;
+        points[targetIndex].y = clampedY;
+        points[targetIndex].rotation = rotationRad;
+    }
+
+    draw();
+    updatePointsList();
+}
+
+function getTieModalTitle(endpoint) {
+    const base = endpoint === 'start' ? 'Select Path Tied To Start' : 'Select Path Tied To End';
+    if (!tieBrowserPath) return base;
+    return `${base} (${currentProjectName}/${tieBrowserPath})`;
+}
+
+async function renderTiePathSelector() {
+    if (!tieSelectionEndpoint) return;
+
+    tiePathTitle.innerText = getTieModalTitle(tieSelectionEndpoint);
+    tieFolderList.innerHTML = '';
+    tiePathList.innerHTML = '';
+    tieFoldersTitle.style.display = 'none';
+    tieFilesTitle.style.display = 'none';
+    tiePathDivider.style.display = 'none';
+
+    const pathForQuery = tieBrowserPath || '';
+    const routines = await window.electronAPI.listRoutines(pathForQuery);
+    const folders = routines.filter(item => item.isDirectory).sort((a, b) => a.name.localeCompare(b.name));
+    const files = routines.filter(item => !item.isDirectory).sort((a, b) => a.name.localeCompare(b.name));
+
+    if (tieSelectionEndpoint && !tieBrowserPath) {
+        const noneOption = createTieOptionCard('None', null, () => {
+            pathTies[tieSelectionEndpoint] = null;
+            updateTieDisplay();
+            closeTiePathSelector();
+        });
+        tiePathList.appendChild(noneOption);
+        tieFilesTitle.style.display = 'block';
+    }
+
+    folders.forEach(item => {
+        if (tieFoldersTitle.style.display !== 'block') tieFoldersTitle.style.display = 'block';
+        const option = createTieOptionCard(item.name, null, async () => {
+            tieBrowserPath = tieBrowserPath ? `${tieBrowserPath}/${item.name}` : item.name;
+            await renderTiePathSelector();
+        });
+        option.classList.add('folder-card');
+        tieFolderList.appendChild(option);
+    });
+
+    const currentRef = getCurrentRoutineReference();
+    files.forEach(item => {
+        const candidateRef = normalizeRoutineFilename(tieBrowserPath ? `${tieBrowserPath}/${item.name}` : item.name);
+        if (!candidateRef || candidateRef === currentRef) return;
+        if (tieFilesTitle.style.display !== 'block') tieFilesTitle.style.display = 'block';
+
+        const displayName = candidateRef.replace(/\.json$/, '');
+        const option = createTieOptionCard(displayName, item.imagePath, async () => {
+            const endpoint = tieSelectionEndpoint;
+            if (!endpoint) return;
+            pathTies[endpoint] = candidateRef;
+            updateTieDisplay();
+            await setReciprocalTie(candidateRef, endpoint);
+            await snapCurrentEndpointToTie(endpoint);
+            closeTiePathSelector();
+            queueTieSync(endpoint);
+        });
+        tiePathList.appendChild(option);
+    });
+
+    if (tieFoldersTitle.style.display === 'block' && tieFilesTitle.style.display === 'block') {
+        tiePathDivider.style.display = 'block';
+    }
+
+    if (tiePathBack) {
+        if (tieBrowserPath) {
+            tiePathBack.classList.remove('hidden');
+        } else {
+            tiePathBack.classList.add('hidden');
+        }
+    }
+}
+
+async function openTiePathSelector(endpoint) {
+    if (endpoint !== 'start' && endpoint !== 'end') return;
+    tieSelectionEndpoint = endpoint;
+    tieBrowserPath = '';
+    await renderTiePathSelector();
+    tiePathModal.classList.remove('hidden');
 }
 
 function createPathItemElement(item) {
@@ -977,6 +1326,8 @@ if (closeModalBtn) {
 window.addEventListener('click', (e) => {
     if (e.target === openPathModal) {
         openPathModal.classList.add('hidden');
+    } else if (e.target === tiePathModal) {
+        closeTiePathSelector();
     }
 });
 
@@ -1002,6 +1353,7 @@ async function loadRoutine(filename) {
     
     points = [];
     events = [];
+    pathTies = { start: null, end: null };
 
     
     
@@ -1027,6 +1379,12 @@ async function loadRoutine(filename) {
     if (data.events && Array.isArray(data.events)) {
         events = data.events;
     }
+
+    if (data.ties && typeof data.ties === 'object') {
+        pathTies.start = normalizeRoutineFilename(data.ties.start);
+        pathTies.end = normalizeRoutineFilename(data.ties.end);
+    }
+    updateTieDisplay();
 
     draw();
     updatePointsList();
@@ -1150,6 +1508,7 @@ function getPointAtDist(dist, splinePoints) {
 }
 
 function addPoint(x, y) {
+    const previousLength = points.length;
     const savedEventPositions = [];
     if (events.length > 0 && points.length >= 2) {
         const pathMetrics = calculatePathMetrics();
@@ -1179,6 +1538,13 @@ function addPoint(x, y) {
 
     draw();
     updatePointsList();
+
+    if (previousLength === 0) {
+        queueTieSync('start');
+        queueTieSync('end');
+    } else {
+        queueTieSync('end');
+    }
 }
 
 function findClosestPointIndex(x, y) {
@@ -1342,9 +1708,17 @@ function deleteClosestPoint(x, y) {
     });
     
     if (closestIdx !== -1 && minDst < threshold) {
+        const previousLastIdx = points.length - 1;
         points.splice(closestIdx, 1);
         draw();
         updatePointsList();
+
+        if (closestIdx === 0) {
+            queueTieSync('start');
+        }
+        if (closestIdx === previousLastIdx) {
+            queueTieSync('end');
+        }
     }
 }
 
@@ -2079,9 +2453,16 @@ window.cancelEditingEvent = () => {
 };
 
 window.deletePointAtIndex = (index) => {
+    const previousLastIdx = points.length - 1;
     points.splice(index, 1);
     draw();
     updatePointsList();
+    if (index === 0) {
+        queueTieSync('start');
+    }
+    if (index === previousLastIdx) {
+        queueTieSync('end');
+    }
 };
 
 window.deleteEventAtIndex = (index) => {
@@ -2143,6 +2524,12 @@ window.updatePointCoordinate = (index, axis, value) => {
     }
 
     draw();
+    if (index === 0) {
+        queueTieSync('start');
+    }
+    if (index === points.length - 1) {
+        queueTieSync('end');
+    }
 };
 
 window.addEventListener('resize', () => {
