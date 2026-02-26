@@ -415,6 +415,40 @@ ipcMain.handle('routines:deleteFolder', async (event, subfolder, folderName) => 
     }
 });
 
+ipcMain.handle('routines:duplicateFolder', async (event, subfolder, folderName) => {
+    if (!currentProjectPath) return null;
+    try {
+        const parentRoutinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const parentImagesDir = path.join(currentProjectPath, 'path_images', subfolder);
+        const sourceDir = path.join(parentRoutinesDir, folderName);
+        const sourceImgDir = path.join(parentImagesDir, folderName);
+
+        if (!fs.existsSync(sourceDir)) {
+            return null;
+        }
+
+        let duplicateName = `${folderName} copy`;
+        let counter = 2;
+        while (fs.existsSync(path.join(parentRoutinesDir, duplicateName))) {
+            duplicateName = `${folderName} copy ${counter}`;
+            counter++;
+        }
+
+        const targetDir = path.join(parentRoutinesDir, duplicateName);
+        fs.cpSync(sourceDir, targetDir, { recursive: true });
+
+        if (fs.existsSync(sourceImgDir)) {
+            const targetImgDir = path.join(parentImagesDir, duplicateName);
+            fs.cpSync(sourceImgDir, targetImgDir, { recursive: true });
+        }
+
+        return duplicateName;
+    } catch (e) {
+        console.error('Failed to duplicate folder:', e);
+        return null;
+    }
+});
+
 ipcMain.handle('routines:save', async (event, subfolder, filename, content, imageBase64) => {
     if (!currentProjectPath) return false;
     try {

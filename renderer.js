@@ -811,6 +811,21 @@ function createPathItemElement(item) {
             }
         };
 
+        const duplicateBtn = document.createElement('div');
+        duplicateBtn.className = 'duplicate-path-btn';
+        duplicateBtn.innerHTML = '&#x29C9;';
+        duplicateBtn.title = 'Duplicate Folder';
+        duplicateBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const duplicatedFolderName = await window.electronAPI.duplicateFolder(currentRoutinePath, item.name);
+            if (!duplicatedFolderName) {
+                alert('Failed to duplicate folder.');
+                return;
+            }
+            await openPathDialog();
+        };
+        li.appendChild(duplicateBtn);
+
     } else {
         span.title = 'Click to rename';
         span.onclick = (e) => {
