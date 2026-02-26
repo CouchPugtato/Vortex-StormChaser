@@ -558,6 +558,53 @@ ipcMain.handle('routines:duplicate', async (event, subfolder, filename) => {
     }
 });
 
+ipcMain.handle('routines:rename', async (event, subfolder, oldFilename, newName) => {
+    if (!currentProjectPath) return null;
+    try {
+        const routinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const imagesDir = path.join(currentProjectPath, 'path_images', subfolder);
+        const sourceFile = path.join(routinesDir, oldFilename);
+
+        if (!fs.existsSync(sourceFile)) {
+            return null;
+        }
+
+        const trimmedName = (newName || '').trim();
+        if (!trimmedName) {
+            return null;
+        }
+
+        const newFilename = trimmedName.endsWith('.json') ? trimmedName : `${trimmedName}.json`;
+        if (newFilename === oldFilename) {
+            return newFilename;
+        }
+
+        const targetFile = path.join(routinesDir, newFilename);
+        if (fs.existsSync(targetFile)) {
+            return null;
+        }
+
+        fs.renameSync(sourceFile, targetFile);
+
+        const oldImageName = oldFilename.replace(/\.json$/, '.png');
+        const newImageName = newFilename.replace(/\.json$/, '.png');
+        const imagePath = path.join(imagesDir, oldImageName);
+        const newImagePath = path.join(imagesDir, newImageName);
+        const legacyImagePath = path.join(routinesDir, oldImageName);
+
+        if (fs.existsSync(imagePath)) {
+            fs.renameSync(imagePath, newImagePath);
+        } else if (fs.existsSync(legacyImagePath)) {
+            fs.renameSync(legacyImagePath, newImagePath);
+        }
+
+        return newFilename;
+    } catch (e) {
+        console.error('Failed to rename routine:', e);
+        return null;
+    }
+});
+
 ipcMain.handle('projects:getRecent', () => {
     return getRecentProjects();
 });

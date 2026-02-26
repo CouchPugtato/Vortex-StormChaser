@@ -812,6 +812,75 @@ function createPathItemElement(item) {
         };
 
     } else {
+        span.title = 'Click to rename';
+        span.onclick = (e) => {
+            e.stopPropagation();
+            beginRename();
+        };
+
+        let isRenaming = false;
+        const beginRename = () => {
+            if (isRenaming) return;
+            isRenaming = true;
+
+            const oldFilename = item.name;
+            const oldDisplayName = oldFilename.replace(/\.json$/, '');
+            const input = document.createElement('input');
+            input.className = 'path-rename-input';
+            input.type = 'text';
+            input.value = oldDisplayName;
+
+            const cancelRename = () => {
+                if (!isRenaming) return;
+                isRenaming = false;
+                if (input.parentNode) {
+                    li.replaceChild(span, input);
+                }
+            };
+
+            const commitRename = async () => {
+                if (!isRenaming) return;
+                const newDisplayName = input.value.trim();
+                if (!newDisplayName || newDisplayName === oldDisplayName) {
+                    cancelRename();
+                    return;
+                }
+
+                const renamedFilename = await window.electronAPI.renameRoutine(currentRoutinePath, oldFilename, newDisplayName);
+                if (!renamedFilename) {
+                    alert('Failed to rename path. Name may already exist.');
+                    cancelRename();
+                    return;
+                }
+
+                item.name = renamedFilename;
+                if (currentPathName === oldFilename) {
+                    currentPathName = renamedFilename;
+                    updatePathDisplay();
+                }
+
+                isRenaming = false;
+                await openPathDialog();
+            };
+
+            input.onclick = (evt) => evt.stopPropagation();
+            input.onkeydown = async (evt) => {
+                evt.stopPropagation();
+                if (evt.key === 'Enter') {
+                    await commitRename();
+                } else if (evt.key === 'Escape') {
+                    cancelRename();
+                }
+            };
+            input.onblur = async () => {
+                await commitRename();
+            };
+
+            li.replaceChild(input, span);
+            input.focus();
+            input.select();
+        };
+
         const duplicateBtn = document.createElement('div');
         duplicateBtn.className = 'duplicate-path-btn';
         duplicateBtn.innerHTML = '&#x29C9;';
