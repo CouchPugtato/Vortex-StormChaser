@@ -247,6 +247,8 @@ Object.keys(robotInputs).forEach(key => {
 
 canvas.addEventListener('mousedown', (e) => {
     if (!currentImage) return;
+    const isModifiedLeftClick = e.button === 0 && (e.shiftKey || e.ctrlKey);
+    const isSecondaryClick = e.button === 2 || isModifiedLeftClick;
     
     const rect = canvas.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
@@ -255,7 +257,7 @@ canvas.addEventListener('mousedown', (e) => {
     const isCropping = !cropSlidersDiv.classList.contains('hidden');
 
     if (isCropping) {
-        if (e.button === 0) {
+        if (e.button === 0 && !isModifiedLeftClick) {
             isDraggingCrop = true;
             
             const scale = Math.min(canvas.width / currentImage.width, canvas.height / currentImage.height);
@@ -278,7 +280,7 @@ canvas.addEventListener('mousedown', (e) => {
         const imgX = crop.x + (mouseX / scaleX);
         const imgY = crop.y + (mouseY / scaleY);
         
-        if (e.button === 0) {
+        if (e.button === 0 && !isModifiedLeftClick) {
             const rotHandleIdx = findClosestRotationHandleIndex(imgX, imgY);
             if (rotHandleIdx !== -1) {
                 isDraggingRotation = true;
@@ -307,34 +309,8 @@ canvas.addEventListener('mousedown', (e) => {
                     addPoint(imgX, imgY);
                 }
             }
-        } else if (e.button === 2) {
-             const eventIdx = findClosestEventIndex(imgX, imgY);
-             if (eventIdx !== -1) {
-                 isDraggingEvent = true;
-                 draggingEventIndex = eventIdx;
-             } else {
-                 const { t, dist } = findClosestPointOnPath(imgX, imgY);
-                 const threshold = 15 / scaleX; 
-                 if (dist < threshold) {
-                      let eventName = "Event " + (events.length + 1);
-                      if (availableEvents.length > 0) {
-                          eventName = availableEvents[0];
-                      }
-
-                      const newEvent = {
-                          name: eventName,
-                          t: t
-                      };
-                      events.push(newEvent);
-                      events.sort((a, b) => a.t - b.t);
-                      
-                      isDraggingEvent = true;
-                      draggingEventIndex = events.findIndex(ev => ev === newEvent);
-                      
-                      draw();
-                      updatePointsList();
-                 }
-             }
+        } else if (isSecondaryClick) {
+            handleSecondaryCanvasAction(imgX, imgY, scaleX, isModifiedLeftClick);
         }
     }
 });
@@ -504,14 +480,48 @@ canvas.addEventListener('contextmenu', (e) => {
     
     const imgX = crop.x + (mouseX / scaleX);
     const imgY = crop.y + (mouseY / scaleY);
-    
+
+    handleSecondaryCanvasAction(imgX, imgY, scaleX, true);
+});
+
+function handleSecondaryCanvasAction(imgX, imgY, scaleX, allowDeleteClosestPoint) {
     const eventIdx = findClosestEventIndex(imgX, imgY);
     if (eventIdx !== -1) {
-        return; 
+        isDraggingEvent = true;
+        draggingEventIndex = eventIdx;
+        return true;
     }
 
-    deleteClosestPoint(imgX, imgY);
-});
+    const { t, dist } = findClosestPointOnPath(imgX, imgY);
+    const threshold = 15 / scaleX;
+    if (dist < threshold) {
+        let eventName = "Event " + (events.length + 1);
+        if (availableEvents.length > 0) {
+            eventName = availableEvents[0];
+        }
+
+        const newEvent = {
+            name: eventName,
+            t: t
+        };
+        events.push(newEvent);
+        events.sort((a, b) => a.t - b.t);
+
+        isDraggingEvent = true;
+        draggingEventIndex = events.findIndex(ev => ev === newEvent);
+
+        draw();
+        updatePointsList();
+        return true;
+    }
+
+    if (allowDeleteClosestPoint) {
+        deleteClosestPoint(imgX, imgY);
+        return true;
+    }
+
+    return false;
+}
 
 
 
