@@ -6,6 +6,9 @@
   "scripts": {
     "start": "electron ."
   },
+  "dependencies": {
+    "three": "^0.183.2"
+  },
   "keywords": [],
   "author": "",
   "license": "ISC",

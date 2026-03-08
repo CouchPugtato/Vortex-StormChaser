@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="container">
+    <div class="container" id="editorView">
         <div class="canvas-container" id="canvasContainer">
             <canvas id="fieldCanvas"></canvas>
         </div>
@@ -90,6 +90,55 @@
                     <span class="path-tie-label">End tied to: <strong id="endTieDisplay">None</strong></span>
                     <button id="btnSelectEndTie" class="btn path-tie-btn">Choose</button>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="simulateView" class="simulate-view hidden">
+        <div class="simulate-toolbar">
+            <h2>Simulation</h2>
+            <div class="simulate-controls">
+                <label>
+                    Path Mode
+                    <select id="simPathMode">
+                        <option value="single">Current Path</option>
+                        <option value="connected">Connected Chunk</option>
+                    </select>
+                </label>
+                <label>
+                    Speed Scale
+                    <input type="number" id="simSpeedScale" value="1.0" min="0.1" step="0.1">
+                </label>
+                <button id="btnBuildSimPath" class="btn">Build Path</button>
+                <button id="btnStartSim" class="btn" style="background-color: #2e7d32;">Start</button>
+                <button id="btnResetSim" class="btn" style="background-color: #424242;">Reset</button>
+                <button id="btnExitSim" class="btn" style="background-color: #1976d2;">Back To Editor</button>
+            </div>
+        </div>
+        <div class="simulate-main">
+            <div class="simulate-sidebar">
+                <h3>Path Follower Constants</h3>
+                <div class="input-group">
+                    <label>Lookahead (m)</label>
+                    <input type="number" id="simConstLookahead" value="0.65" min="0.05" step="0.05">
+                </div>
+                <div class="input-group">
+                    <label>Heading Gain</label>
+                    <input type="number" id="simConstHeadingGain" value="4.0" min="0.1" step="0.1">
+                </div>
+                <div class="input-group">
+                    <label>Max Turn Rate (deg/s)</label>
+                    <input type="number" id="simConstMaxTurnDeg" value="240" min="10" step="10">
+                </div>
+                <div class="input-group">
+                    <label>End Tolerance (m)</label>
+                    <input type="number" id="simConstEndTol" value="0.15" min="0.01" step="0.01">
+                </div>
+                <p id="simStatusText" class="status-text">Build a path to begin.</p>
+                <p class="info-text">Camera: left drag orbit, right drag pan, wheel zoom.</p>
+            </div>
+            <div class="simulate-viewport-wrap">
+                <div id="simulateViewport" class="simulate-viewport"></div>
             </div>
         </div>
     </div>
@@ -195,6 +244,7 @@
         </div>
     </div>
 
+    <script src="https://unpkg.com/three@0.183.2/build/three.min.js"></script>
     <script src="renderer.js"></script>
 </body>
 </html>

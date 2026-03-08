@@ -5,12 +5,26 @@ const fs = require('fs');
 let currentProjectPath = null;
 const GLOBAL_SETTINGS_FILE = path.join(__dirname, 'settings.json');
 const RECENT_PROJECTS_FILE = path.join(app.getPath('userData'), 'recent_projects.json');
+const PROJECT_FOLDER_NAME = 'vortex_routines';
+const ROUTINES_DIR_NAME = 'paths';
+const LEGACY_ROUTINES_DIR_NAME = 'vortex routines';
 
 function getSettingsPath() {
     if (currentProjectPath) {
         return path.join(currentProjectPath, 'settings.json');
     }
     return GLOBAL_SETTINGS_FILE;
+}
+
+function getRoutinesRootPath() {
+    if (!currentProjectPath) return null;
+    const preferredDir = path.join(currentProjectPath, ROUTINES_DIR_NAME);
+    if (fs.existsSync(preferredDir)) return preferredDir;
+
+    const legacyDir = path.join(currentProjectPath, LEGACY_ROUTINES_DIR_NAME);
+    if (fs.existsSync(legacyDir)) return legacyDir;
+
+    return preferredDir;
 }
 
 function getRecentProjects() {
@@ -52,7 +66,7 @@ async function openProject(mainWindow, projectPath) {
         const settingsPath = path.join(projectPath, 'settings.json');
         
         if (!fs.existsSync(eventsPath) || !fs.existsSync(settingsPath)) {
-             throw new Error('The "vortex" folder does not contain a valid project (missing events.json or settings.json).');
+             throw new Error(`The "${PROJECT_FOLDER_NAME}" folder does not contain a valid project (missing events.json or settings.json).`);
         }
 
         currentProjectPath = projectPath;
@@ -81,13 +95,13 @@ async function handleCreateProject(mainWindow) {
     if (!canceled && filePaths.length > 0) {
         const selectedPath = filePaths[0];
         try {
-            const projectPath = path.join(selectedPath, 'vortex');
+            const projectPath = path.join(selectedPath, PROJECT_FOLDER_NAME);
             if (!fs.existsSync(projectPath)) fs.mkdirSync(projectPath);
 
             const eventsPath = path.join(projectPath, 'events.json');
             const settingsPath = path.join(projectPath, 'settings.json');
             const imagesDir = path.join(projectPath, 'field_images');
-            const routinesDir = path.join(projectPath, 'vortex routines');
+            const routinesDir = path.join(projectPath, ROUTINES_DIR_NAME);
             const pathImagesDir = path.join(projectPath, 'path_images');
 
             if (!fs.existsSync(imagesDir)) fs.mkdirSync(imagesDir);
@@ -122,12 +136,12 @@ async function handleOpenProjectDialog(mainWindow) {
     });
     if (!canceled && filePaths.length > 0) {
         let selectedPath = filePaths[0];
-        if (path.basename(selectedPath) !== 'vortex') {
-             const checkVortex = path.join(selectedPath, 'vortex');
-             if (fs.existsSync(checkVortex)) {
-                 selectedPath = checkVortex;
+        if (path.basename(selectedPath) !== PROJECT_FOLDER_NAME) {
+             const checkProjectFolder = path.join(selectedPath, PROJECT_FOLDER_NAME);
+             if (fs.existsSync(checkProjectFolder)) {
+                 selectedPath = checkProjectFolder;
              } else {
-                 dialog.showErrorBox('Invalid Project', 'The selected folder does not contain a "vortex" folder.');
+                 dialog.showErrorBox('Invalid Project', `The selected folder does not contain a "${PROJECT_FOLDER_NAME}" folder.`);
                  return;
              }
         }
@@ -211,6 +225,10 @@ function createWindow() {
                 click: () => mainWindow.webContents.send('menu:clear-points')
             }
         ]
+    },
+    {
+        label: 'Simulate',
+        click: () => mainWindow.webContents.send('menu:toggle-simulate')
     }
   ];
 
@@ -247,7 +265,8 @@ ipcMain.handle('dialog:openFile', async () => {
 });
 
 ipcMain.handle('dialog:saveFile', async (event, content) => {
-  const defaultPath = currentProjectPath ? path.join(currentProjectPath, 'vortex routines', 'points.json') : 'points.json';
+  const routinesRoot = getRoutinesRootPath();
+  const defaultPath = routinesRoot ? path.join(routinesRoot, 'points.json') : 'points.json';
   const { canceled, filePath } = await dialog.showSaveDialog({
     filters: [{ name: 'JSON', extensions: ['json'] }],
     defaultPath: defaultPath
@@ -310,7 +329,7 @@ ipcMain.handle('settings:save', async (event, settings) => {
 ipcMain.handle('routines:list', async (event, subfolder = '') => {
     if (!currentProjectPath) return [];
     try {
-        const routinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const routinesDir = path.join(getRoutinesRootPath(), subfolder);
         const imagesDir = path.join(currentProjectPath, 'path_images', subfolder);
 
         if (!fs.existsSync(imagesDir)) {
@@ -376,7 +395,7 @@ ipcMain.handle('routines:list', async (event, subfolder = '') => {
 ipcMain.handle('routines:createFolder', async (event, subfolder, folderName) => {
     if (!currentProjectPath) return false;
     try {
-        const targetDir = path.join(currentProjectPath, 'vortex routines', subfolder, folderName);
+        const targetDir = path.join(getRoutinesRootPath(), subfolder, folderName);
         const targetImgDir = path.join(currentProjectPath, 'path_images', subfolder, folderName);
         
         let success = false;
@@ -399,7 +418,7 @@ ipcMain.handle('routines:createFolder', async (event, subfolder, folderName) => 
 ipcMain.handle('routines:deleteFolder', async (event, subfolder, folderName) => {
     if (!currentProjectPath) return false;
     try {
-        const targetDir = path.join(currentProjectPath, 'vortex routines', subfolder, folderName);
+        const targetDir = path.join(getRoutinesRootPath(), subfolder, folderName);
         const targetImgDir = path.join(currentProjectPath, 'path_images', subfolder, folderName);
         
         if (fs.existsSync(targetDir)) {
@@ -418,7 +437,7 @@ ipcMain.handle('routines:deleteFolder', async (event, subfolder, folderName) => 
 ipcMain.handle('routines:duplicateFolder', async (event, subfolder, folderName) => {
     if (!currentProjectPath) return null;
     try {
-        const parentRoutinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const parentRoutinesDir = path.join(getRoutinesRootPath(), subfolder);
         const parentImagesDir = path.join(currentProjectPath, 'path_images', subfolder);
         const sourceDir = path.join(parentRoutinesDir, folderName);
         const sourceImgDir = path.join(parentImagesDir, folderName);
@@ -452,7 +471,7 @@ ipcMain.handle('routines:duplicateFolder', async (event, subfolder, folderName) 
 ipcMain.handle('routines:save', async (event, subfolder, filename, content, imageBase64) => {
     if (!currentProjectPath) return false;
     try {
-        const routinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const routinesDir = path.join(getRoutinesRootPath(), subfolder);
         const imagesDir = path.join(currentProjectPath, 'path_images', subfolder);
         
         if (!fs.existsSync(routinesDir)) fs.mkdirSync(routinesDir, { recursive: true });
@@ -477,7 +496,7 @@ ipcMain.handle('routines:save', async (event, subfolder, filename, content, imag
 ipcMain.handle('routines:load', async (event, subfolder, filename) => {
     if (!currentProjectPath) return null;
     try {
-        const filePath = path.join(currentProjectPath, 'vortex routines', subfolder, filename);
+        const filePath = path.join(getRoutinesRootPath(), subfolder, filename);
         if (fs.existsSync(filePath)) {
             const data = fs.readFileSync(filePath, 'utf-8');
             return JSON.parse(data);
@@ -491,7 +510,7 @@ ipcMain.handle('routines:load', async (event, subfolder, filename) => {
 ipcMain.handle('routines:delete', async (event, subfolder, filename) => {
     if (!currentProjectPath) return false;
     try {
-        const routinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const routinesDir = path.join(getRoutinesRootPath(), subfolder);
         const imagesDir = path.join(currentProjectPath, 'path_images', subfolder);
         
         const filePath = path.join(routinesDir, filename);
@@ -512,8 +531,8 @@ ipcMain.handle('routines:delete', async (event, subfolder, filename) => {
 ipcMain.handle('routines:moveFile', async (event, sourceSubfolder, filename, targetSubfolder) => {
     if (!currentProjectPath) return false;
     try {
-        const sourceDir = path.join(currentProjectPath, 'vortex routines', sourceSubfolder);
-        const targetDir = path.join(currentProjectPath, 'vortex routines', targetSubfolder);
+        const sourceDir = path.join(getRoutinesRootPath(), sourceSubfolder);
+        const targetDir = path.join(getRoutinesRootPath(), targetSubfolder);
         
         const sourceImgDir = path.join(currentProjectPath, 'path_images', sourceSubfolder);
         const targetImgDir = path.join(currentProjectPath, 'path_images', targetSubfolder);
@@ -554,7 +573,7 @@ ipcMain.handle('routines:moveFile', async (event, sourceSubfolder, filename, tar
 ipcMain.handle('routines:duplicate', async (event, subfolder, filename) => {
     if (!currentProjectPath) return null;
     try {
-        const routinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const routinesDir = path.join(getRoutinesRootPath(), subfolder);
         const imagesDir = path.join(currentProjectPath, 'path_images', subfolder);
         const sourceFile = path.join(routinesDir, filename);
         const sourceImg = path.join(imagesDir, filename.replace(/\.json$/, '.png'));
@@ -595,7 +614,7 @@ ipcMain.handle('routines:duplicate', async (event, subfolder, filename) => {
 ipcMain.handle('routines:rename', async (event, subfolder, oldFilename, newName) => {
     if (!currentProjectPath) return null;
     try {
-        const routinesDir = path.join(currentProjectPath, 'vortex routines', subfolder);
+        const routinesDir = path.join(getRoutinesRootPath(), subfolder);
         const imagesDir = path.join(currentProjectPath, 'path_images', subfolder);
         const sourceFile = path.join(routinesDir, oldFilename);
 

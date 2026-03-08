@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('menu:toggle-crop', () => callback('toggle-crop'));
       ipcRenderer.on('menu:toggle-robot', () => callback('toggle-robot'));
       ipcRenderer.on('menu:clear-points', () => callback('clear-points'));
+      ipcRenderer.on('menu:toggle-simulate', () => callback('toggle-simulate'));
       ipcRenderer.on('menu:load-events-config', (e, data) => callback('load-events-config', data));
       ipcRenderer.on('project:loaded', (e, data) => callback('project-loaded', data));
   }

@@ -89,6 +89,20 @@ const tieFoldersTitle = document.getElementById('tieFoldersTitle');
 const tieFilesTitle = document.getElementById('tieFilesTitle');
 const tiePathDivider = document.getElementById('tiePathDivider');
 const closeTiePathModal = document.getElementById('closeTiePathModal');
+const editorView = document.getElementById('editorView');
+const simulateView = document.getElementById('simulateView');
+const simulateViewport = document.getElementById('simulateViewport');
+const simPathMode = document.getElementById('simPathMode');
+const simSpeedScale = document.getElementById('simSpeedScale');
+const simConstLookahead = document.getElementById('simConstLookahead');
+const simConstHeadingGain = document.getElementById('simConstHeadingGain');
+const simConstMaxTurnDeg = document.getElementById('simConstMaxTurnDeg');
+const simConstEndTol = document.getElementById('simConstEndTol');
+const simStatusText = document.getElementById('simStatusText');
+const btnBuildSimPath = document.getElementById('btnBuildSimPath');
+const btnStartSim = document.getElementById('btnStartSim');
+const btnResetSim = document.getElementById('btnResetSim');
+const btnExitSim = document.getElementById('btnExitSim');
 
 const deleteConfirmModal = document.getElementById('deleteConfirmModal');
 const btnConfirmDelete = document.getElementById('btnConfirmDelete');
@@ -116,6 +130,37 @@ let pathTies = { start: null, end: null };
 let tieSelectionEndpoint = null;
 let isApplyingTieSync = false;
 let tieBrowserPath = '';
+let isSimulationViewActive = false;
+let simScene = null;
+let simCamera = null;
+let simRenderer = null;
+let simRobotMesh = null;
+let simPathLine = null;
+let simFieldMesh = null;
+let simGridHelper = null;
+let simRenderRequestId = null;
+let simPathPoints = [];
+let simSplinePoints = [];
+let simSplineSegmentLengths = [];
+let simSplineTotalLength = 0;
+let simRunState = {
+    running: false,
+    lastTimestamp: 0,
+    elapsed: 0,
+    progressDist: 0,
+    pose: { x: 0, y: 0, heading: 0 }
+};
+const simCameraControl = {
+    targetX: fieldConstants.width / 2,
+    targetY: fieldConstants.height / 2,
+    yaw: -0.8,
+    pitch: 0.9,
+    distance: 18,
+    dragging: false,
+    mode: 'orbit',
+    lastX: 0,
+    lastY: 0
+};
 
 function updatePathDisplay() {
     if (currentPathDisplay) {
@@ -217,6 +262,9 @@ updateTieDisplay();
                 draw();
                 updatePointsList();
                 break;
+            case 'toggle-simulate':
+                toggleSimulationView();
+                break;
             case 'load-events-config':
                 loadEvents(payload);
                 break;
@@ -234,7 +282,7 @@ function handleProjectLoaded(data) {
 
     if (data.path) {
         const parts = data.path.replace(/[\\/]$/, '').split(/[\\/]/);
-        if (parts.length > 1 && parts[parts.length-1] === 'vortex') {
+        if (parts.length > 1 && (parts[parts.length-1] === 'vortex_routines' || parts[parts.length-1] === 'vortex')) {
              currentProjectName = parts[parts.length-2];
         } else {
              currentProjectName = parts[parts.length-1];
@@ -264,6 +312,7 @@ function handleProjectLoaded(data) {
             robotInputs.height.value = (robotSettings.height / METERS_PER_INCH).toFixed(1);
             robotInputs.bumper.value = (robotSettings.bumper / METERS_PER_INCH).toFixed(1);
             robotInputs.speed.value = (robotSettings.speed / METERS_PER_INCH).toFixed(1);
+            updateSimulationRobotMesh();
         }
     }
     
@@ -293,6 +342,7 @@ Object.keys(robotInputs).forEach(key => {
         const val = parseFloat(e.target.value);
         if (!isNaN(val) && val > 0) {
             robotSettings[key] = val * METERS_PER_INCH;
+            updateSimulationRobotMesh();
             draw();
             saveSettings();
         }
@@ -1428,6 +1478,7 @@ function loadImage(src) {
         robotInputs.height.value = (robotSettings.height / METERS_PER_INCH).toFixed(1);
         robotInputs.bumper.value = (robotSettings.bumper / METERS_PER_INCH).toFixed(1);
         robotInputs.speed.value = (robotSettings.speed / METERS_PER_INCH).toFixed(1);
+        updateSimulationRobotMesh();
     }
         } else {
             sliders.left.value = 0;
@@ -1954,7 +2005,8 @@ async function loadRecentProjects() {
             
             const parts = path.replace(/[\\/]$/, '').split(/[\\/]/);
             let folderName = parts.pop();
-            if (folderName.toLowerCase() === 'vortex' && parts.length > 0) {
+            const normalizedFolder = folderName.toLowerCase();
+            if ((normalizedFolder === 'vortex_routines' || normalizedFolder === 'vortex') && parts.length > 0) {
                 folderName = parts.pop();
             }
             nameSpan.innerText = folderName;
@@ -2532,6 +2584,517 @@ window.updatePointCoordinate = (index, axis, value) => {
     }
 };
 
+function setSimStatus(text, isError = false) {
+    if (!simStatusText) return;
+    simStatusText.innerText = text;
+    simStatusText.style.color = isError ? '#f28b82' : '#aaa';
+}
+
+function hideAllModals() {
+    if (openPathModal) openPathModal.classList.add('hidden');
+    if (tiePathModal) tiePathModal.classList.add('hidden');
+    if (deleteConfirmModal) deleteConfirmModal.classList.add('hidden');
+    if (savePathModal) savePathModal.classList.add('hidden');
+    if (newFolderModal) newFolderModal.classList.add('hidden');
+}
+
+function toggleSimulationView(forceShow = null) {
+    const showSim = forceShow === null ? !isSimulationViewActive : !!forceShow;
+    isSimulationViewActive = showSim;
+
+    if (editorView) {
+        if (showSim) editorView.classList.add('hidden');
+        else editorView.classList.remove('hidden');
+    }
+    if (simulateView) {
+        if (showSim) simulateView.classList.remove('hidden');
+        else simulateView.classList.add('hidden');
+    }
+
+    if (showSim) {
+        hideAllModals();
+        if (isPlaying) {
+            isPlaying = false;
+            btnPlay.innerText = "Play Animation";
+            btnPlay.style.backgroundColor = "#2e7d32";
+            cancelAnimationFrame(animationRequestId);
+        }
+        initSimulationScene();
+        resizeSimulationViewport();
+        setSimStatus('Build a path to begin.');
+    } else {
+        simRunState.running = false;
+        if (btnStartSim) btnStartSim.innerText = 'Start';
+        draw();
+    }
+}
+
+function initSimulationScene() {
+    if (!simulateViewport || simRenderer) return;
+
+    if (!window.THREE) {
+        simulateViewport.innerHTML = '<div class="simulate-error">Three.js failed to load. Install dependencies or allow network access for the CDN script.</div>';
+        setSimStatus('Three.js is unavailable.', true);
+        return;
+    }
+
+    const THREE = window.THREE;
+    simScene = new THREE.Scene();
+    simScene.background = new THREE.Color(0x0a0a0a);
+
+    simCamera = new THREE.PerspectiveCamera(60, 1, 0.01, 1000);
+    simRenderer = new THREE.WebGLRenderer({ antialias: true });
+    simRenderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    simRenderer.outputColorSpace = THREE.SRGBColorSpace;
+    simulateViewport.innerHTML = '';
+    simulateViewport.appendChild(simRenderer.domElement);
+
+    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+    simScene.add(ambient);
+    const directional = new THREE.DirectionalLight(0xffffff, 0.85);
+    directional.position.set(8, 16, 10);
+    simScene.add(directional);
+
+    const planeGeom = new THREE.PlaneGeometry(fieldConstants.width, fieldConstants.height);
+    const planeMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.95, metalness: 0.05 });
+    simFieldMesh = new THREE.Mesh(planeGeom, planeMat);
+    simFieldMesh.rotation.x = -Math.PI / 2;
+    simFieldMesh.position.set(fieldConstants.width / 2, 0, fieldConstants.height / 2);
+    simScene.add(simFieldMesh);
+
+    const gridDivisions = Math.max(8, Math.round(fieldConstants.width));
+    simGridHelper = new THREE.GridHelper(fieldConstants.width, gridDivisions, 0x666666, 0x2e2e2e);
+    simGridHelper.position.set(fieldConstants.width / 2, 0.001, fieldConstants.height / 2);
+    simScene.add(simGridHelper);
+
+    const robotGeom = new THREE.BoxGeometry(robotSettings.width, 0.18, robotSettings.height);
+    const robotMat = new THREE.MeshStandardMaterial({ color: 0xff3b30, roughness: 0.5, metalness: 0.08 });
+    simRobotMesh = new THREE.Mesh(robotGeom, robotMat);
+    simRobotMesh.position.set(0, 0.09, 0);
+    simScene.add(simRobotMesh);
+
+    setupSimulationCameraInput();
+    updateSimulationCamera();
+
+    if (!simRenderRequestId) {
+        simRenderRequestId = requestAnimationFrame(simulationRenderLoop);
+    }
+}
+
+function setupSimulationCameraInput() {
+    if (!simulateViewport) return;
+
+    simulateViewport.oncontextmenu = (e) => e.preventDefault();
+
+    simulateViewport.onmousedown = (e) => {
+        simCameraControl.dragging = true;
+        simCameraControl.lastX = e.clientX;
+        simCameraControl.lastY = e.clientY;
+        simCameraControl.mode = e.button === 2 ? 'pan' : 'orbit';
+    };
+
+    window.addEventListener('mouseup', () => {
+        simCameraControl.dragging = false;
+    });
+
+    window.addEventListener('mousemove', (e) => {
+        if (!simCameraControl.dragging || !isSimulationViewActive) return;
+        const dx = e.clientX - simCameraControl.lastX;
+        const dy = e.clientY - simCameraControl.lastY;
+        simCameraControl.lastX = e.clientX;
+        simCameraControl.lastY = e.clientY;
+
+        if (simCameraControl.mode === 'orbit') {
+            simCameraControl.yaw -= dx * 0.008;
+            simCameraControl.pitch = Math.max(0.08, Math.min(1.45, simCameraControl.pitch + dy * 0.006));
+        } else {
+            const panScale = simCameraControl.distance * 0.0018;
+            simCameraControl.targetX -= dx * panScale;
+            simCameraControl.targetY += dy * panScale;
+        }
+        updateSimulationCamera();
+    });
+
+    simulateViewport.onwheel = (e) => {
+        e.preventDefault();
+        const zoomScale = e.deltaY > 0 ? 1.08 : 0.92;
+        simCameraControl.distance = Math.max(3, Math.min(60, simCameraControl.distance * zoomScale));
+        updateSimulationCamera();
+    };
+}
+
+function updateSimulationCamera() {
+    if (!simCamera) return;
+    const cp = Math.cos(simCameraControl.pitch);
+    const sp = Math.sin(simCameraControl.pitch);
+    const cy = Math.cos(simCameraControl.yaw);
+    const sy = Math.sin(simCameraControl.yaw);
+
+    const camX = simCameraControl.targetX + simCameraControl.distance * cp * cy;
+    const camY = simCameraControl.distance * sp;
+    const camZ = simCameraControl.targetY + simCameraControl.distance * cp * sy;
+
+    simCamera.position.set(camX, camY, camZ);
+    simCamera.lookAt(simCameraControl.targetX, 0, simCameraControl.targetY);
+}
+
+function resizeSimulationViewport() {
+    if (!simRenderer || !simCamera || !simulateViewport || !isSimulationViewActive) return;
+    const w = simulateViewport.clientWidth;
+    const h = simulateViewport.clientHeight;
+    if (w < 2 || h < 2) return;
+    simRenderer.setSize(w, h, false);
+    simCamera.aspect = w / h;
+    simCamera.updateProjectionMatrix();
+}
+
+function simulationRenderLoop(timestamp) {
+    simRenderRequestId = requestAnimationFrame(simulationRenderLoop);
+    if (!simRenderer || !simScene || !simCamera) return;
+    if (!isSimulationViewActive) return;
+
+    resizeSimulationViewport();
+    updateSimulationPose(timestamp);
+    simRenderer.render(simScene, simCamera);
+}
+
+function computePolylineLengths(pathPoints) {
+    const segLens = [];
+    let total = 0;
+    for (let i = 0; i < pathPoints.length - 1; i++) {
+        const dx = pathPoints[i + 1].x - pathPoints[i].x;
+        const dy = pathPoints[i + 1].y - pathPoints[i].y;
+        const len = Math.sqrt(dx * dx + dy * dy);
+        segLens.push(len);
+        total += len;
+    }
+    return { segLens, total };
+}
+
+function getCurrentPathFieldPoints() {
+    return points.map((p) => {
+        const coords = getFieldCoordinates(p.x, p.y);
+        return { x: coords.x, y: coords.y, rotation: p.rotation || 0 };
+    });
+}
+
+function routineDataToFieldPoints(data) {
+    if (!data || !Array.isArray(data.points)) return [];
+    return data.points.map((p) => ({
+        x: Number(p.x),
+        y: Number(p.y),
+        rotation: (Number(p.rotation) || 0) * Math.PI / 180
+    }));
+}
+
+function pointsNear(a, b, tol = 0.02) {
+    if (!a || !b) return false;
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return (dx * dx + dy * dy) <= (tol * tol);
+}
+
+async function loadRoutineByRef(ref) {
+    const location = parseRoutineReference(ref);
+    if (!location) return null;
+    const data = await window.electronAPI.loadRoutine(location.subfolder, location.filename);
+    if (!data || !Array.isArray(data.points) || data.points.length < 2) return null;
+    return data;
+}
+
+async function buildConnectedPath() {
+    const currentRef = getCurrentRoutineReference();
+    const currentFieldPoints = getCurrentPathFieldPoints();
+    if (!currentRef || currentFieldPoints.length < 2) {
+        return { points: currentFieldPoints, pathCount: currentFieldPoints.length >= 2 ? 1 : 0 };
+    }
+
+    const visited = new Set([currentRef]);
+    const nodes = new Map();
+    nodes.set(currentRef, {
+        points: currentFieldPoints,
+        ties: { start: normalizeRoutineFilename(pathTies.start), end: normalizeRoutineFilename(pathTies.end) }
+    });
+
+    const backward = [];
+    let prevRef = normalizeRoutineFilename(pathTies.start);
+    let guard = 0;
+    while (prevRef && !visited.has(prevRef) && guard < 50) {
+        const prevData = await loadRoutineByRef(prevRef);
+        if (!prevData) break;
+        visited.add(prevRef);
+        nodes.set(prevRef, {
+            points: routineDataToFieldPoints(prevData),
+            ties: {
+                start: normalizeRoutineFilename(prevData.ties?.start),
+                end: normalizeRoutineFilename(prevData.ties?.end)
+            }
+        });
+        backward.unshift(prevRef);
+        prevRef = normalizeRoutineFilename(prevData.ties?.start);
+        guard++;
+    }
+
+    const forward = [];
+    let nextRef = normalizeRoutineFilename(pathTies.end);
+    guard = 0;
+    while (nextRef && !visited.has(nextRef) && guard < 50) {
+        const nextData = await loadRoutineByRef(nextRef);
+        if (!nextData) break;
+        visited.add(nextRef);
+        nodes.set(nextRef, {
+            points: routineDataToFieldPoints(nextData),
+            ties: {
+                start: normalizeRoutineFilename(nextData.ties?.start),
+                end: normalizeRoutineFilename(nextData.ties?.end)
+            }
+        });
+        forward.push(nextRef);
+        nextRef = normalizeRoutineFilename(nextData.ties?.end);
+        guard++;
+    }
+
+    const orderedRefs = [...backward, currentRef, ...forward];
+    const combined = [];
+    orderedRefs.forEach((ref) => {
+        const node = nodes.get(ref);
+        if (!node || !Array.isArray(node.points) || node.points.length < 2) return;
+        node.points.forEach((p, idx) => {
+            if (combined.length > 0 && idx === 0 && pointsNear(combined[combined.length - 1], p)) return;
+            combined.push({ x: p.x, y: p.y, rotation: p.rotation || 0 });
+        });
+    });
+
+    return { points: combined, pathCount: orderedRefs.length };
+}
+
+function drawSimulationPath() {
+    if (!simScene || !window.THREE) return;
+    if (simPathLine) {
+        simScene.remove(simPathLine);
+        simPathLine.geometry.dispose();
+        simPathLine.material.dispose();
+        simPathLine = null;
+    }
+    if (!simSplinePoints || simSplinePoints.length < 2) return;
+
+    const THREE = window.THREE;
+    const verts = simSplinePoints.map((p) => new THREE.Vector3(p.x, 0.05, p.y));
+    const geom = new THREE.BufferGeometry().setFromPoints(verts);
+    const mat = new THREE.LineBasicMaterial({ color: 0x4fc3f7 });
+    simPathLine = new THREE.Line(geom, mat);
+    simScene.add(simPathLine);
+}
+
+function updateSimulationRobotMesh() {
+    if (!simScene || !simRobotMesh || !window.THREE) return;
+    const THREE = window.THREE;
+    const oldGeom = simRobotMesh.geometry;
+    simRobotMesh.geometry = new THREE.BoxGeometry(robotSettings.width, 0.18, robotSettings.height);
+    if (oldGeom) oldGeom.dispose();
+}
+
+function getSimulationConstants() {
+    return {
+        lookahead: Math.max(0.02, Number(simConstLookahead?.value) || 0.65),
+        headingGain: Math.max(0.01, Number(simConstHeadingGain?.value) || 4),
+        maxTurnRate: (Math.max(1, Number(simConstMaxTurnDeg?.value) || 240) * Math.PI) / 180,
+        endTol: Math.max(0.01, Number(simConstEndTol?.value) || 0.15),
+        speedScale: Math.max(0.01, Number(simSpeedScale?.value) || 1)
+    };
+}
+
+function resetSimulationRun() {
+    simRunState.running = false;
+    simRunState.lastTimestamp = 0;
+    simRunState.elapsed = 0;
+    simRunState.progressDist = 0;
+
+    if (!simPathPoints || simPathPoints.length < 2) {
+        simRunState.pose = { x: 0, y: 0, heading: 0 };
+        if (simRobotMesh) simRobotMesh.visible = false;
+        if (btnStartSim) btnStartSim.innerText = 'Start';
+        return;
+    }
+
+    const first = simPathPoints[0];
+    const second = simPathPoints[1];
+    const initialHeading = typeof first.rotation === 'number'
+        ? first.rotation
+        : Math.atan2(second.y - first.y, second.x - first.x);
+
+    simRunState.pose = { x: first.x, y: first.y, heading: initialHeading };
+    if (simRobotMesh) {
+        simRobotMesh.visible = true;
+        simRobotMesh.position.set(first.x, 0.09, first.y);
+        simRobotMesh.rotation.y = -initialHeading;
+    }
+    if (btnStartSim) btnStartSim.innerText = 'Start';
+}
+
+function closestOnPath(px, py, samples, segmentLengths) {
+    let best = {
+        x: samples[0].x,
+        y: samples[0].y,
+        distSq: Number.POSITIVE_INFINITY,
+        distanceAlong: 0
+    };
+    let distAccum = 0;
+
+    for (let i = 0; i < samples.length - 1; i++) {
+        const a = samples[i];
+        const b = samples[i + 1];
+        const abx = b.x - a.x;
+        const aby = b.y - a.y;
+        const abLenSq = abx * abx + aby * aby;
+        let t = 0;
+        if (abLenSq > 1e-9) {
+            t = ((px - a.x) * abx + (py - a.y) * aby) / abLenSq;
+            t = Math.max(0, Math.min(1, t));
+        }
+        const projX = a.x + abx * t;
+        const projY = a.y + aby * t;
+        const dx = px - projX;
+        const dy = py - projY;
+        const dSq = dx * dx + dy * dy;
+
+        if (dSq < best.distSq) {
+            best = {
+                x: projX,
+                y: projY,
+                distSq: dSq,
+                distanceAlong: distAccum + (segmentLengths[i] || 0) * t
+            };
+        }
+
+        distAccum += segmentLengths[i] || 0;
+    }
+    return best;
+}
+
+function updateSimulationPose(timestamp) {
+    if (!simRunState.running) return;
+    if (!simSplinePoints || simSplinePoints.length < 2) return;
+
+    const lastTs = simRunState.lastTimestamp || timestamp;
+    const dt = Math.min(0.06, Math.max(0.001, (timestamp - lastTs) / 1000));
+    simRunState.lastTimestamp = timestamp;
+    simRunState.elapsed += dt;
+
+    const constants = getSimulationConstants();
+    const pose = simRunState.pose;
+
+    const closest = closestOnPath(pose.x, pose.y, simSplinePoints, simSplineSegmentLengths);
+    simRunState.progressDist = Math.max(simRunState.progressDist, closest.distanceAlong);
+
+    const lookaheadDist = Math.min(simSplineTotalLength, simRunState.progressDist + constants.lookahead);
+    const target = getPointAtDist(lookaheadDist, simSplinePoints) || simSplinePoints[simSplinePoints.length - 1];
+    const desiredHeading = Math.atan2(target.y - pose.y, target.x - pose.x);
+
+    let headingError = desiredHeading - pose.heading;
+    while (headingError > Math.PI) headingError -= Math.PI * 2;
+    while (headingError < -Math.PI) headingError += Math.PI * 2;
+
+    const desiredTurn = headingError * constants.headingGain;
+    const limitedTurn = Math.max(-constants.maxTurnRate, Math.min(constants.maxTurnRate, desiredTurn));
+    pose.heading += limitedTurn * dt;
+
+    const speedMps = robotSettings.speed * constants.speedScale;
+    pose.x += Math.cos(pose.heading) * speedMps * dt;
+    pose.y += Math.sin(pose.heading) * speedMps * dt;
+
+    const nearestAfter = closestOnPath(pose.x, pose.y, simSplinePoints, simSplineSegmentLengths);
+    simRunState.progressDist = Math.max(simRunState.progressDist, nearestAfter.distanceAlong);
+
+    const endPoint = simSplinePoints[simSplinePoints.length - 1];
+    const dxEnd = endPoint.x - pose.x;
+    const dyEnd = endPoint.y - pose.y;
+    const endDist = Math.sqrt(dxEnd * dxEnd + dyEnd * dyEnd);
+    const remaining = Math.max(0, simSplineTotalLength - simRunState.progressDist);
+
+    if (remaining <= constants.endTol && endDist <= constants.endTol) {
+        simRunState.running = false;
+        if (btnStartSim) btnStartSim.innerText = 'Start';
+        setSimStatus(`Finished in ${simRunState.elapsed.toFixed(2)}s`);
+    } else {
+        setSimStatus(`t=${simRunState.elapsed.toFixed(2)}s  progress=${simRunState.progressDist.toFixed(2)}m/${simSplineTotalLength.toFixed(2)}m`);
+    }
+
+    if (simRobotMesh) {
+        simRobotMesh.position.set(pose.x, 0.09, pose.y);
+        simRobotMesh.rotation.y = -pose.heading;
+    }
+}
+
+async function buildSimulationPath() {
+    const mode = simPathMode?.value || 'single';
+    let built = { points: [], pathCount: 0 };
+
+    if (mode === 'connected') {
+        built = await buildConnectedPath();
+    } else {
+        const singlePoints = getCurrentPathFieldPoints();
+        built = { points: singlePoints, pathCount: singlePoints.length >= 2 ? 1 : 0 };
+    }
+
+    simPathPoints = built.points || [];
+    if (simPathPoints.length < 2) {
+        simSplinePoints = [];
+        simSplineSegmentLengths = [];
+        simSplineTotalLength = 0;
+        drawSimulationPath();
+        resetSimulationRun();
+        setSimStatus('Need at least two points in the selected path set.', true);
+        return;
+    }
+
+    simSplinePoints = getCatmullRomSplinePoints(simPathPoints, 40);
+    const lengths = computePolylineLengths(simSplinePoints);
+    simSplineSegmentLengths = lengths.segLens;
+    simSplineTotalLength = lengths.total;
+
+    drawSimulationPath();
+    resetSimulationRun();
+    setSimStatus(`Ready: ${built.pathCount} path(s), ${simSplineTotalLength.toFixed(2)} meters.`);
+}
+
+if (btnBuildSimPath) {
+    btnBuildSimPath.addEventListener('click', async () => {
+        await buildSimulationPath();
+    });
+}
+
+if (btnStartSim) {
+    btnStartSim.addEventListener('click', async () => {
+        if (!simSplinePoints || simSplinePoints.length < 2) {
+            await buildSimulationPath();
+            if (!simSplinePoints || simSplinePoints.length < 2) return;
+        }
+
+        if (!simRunState.running && simRunState.progressDist >= simSplineTotalLength - 0.01) {
+            resetSimulationRun();
+        }
+
+        simRunState.running = !simRunState.running;
+        simRunState.lastTimestamp = 0;
+        btnStartSim.innerText = simRunState.running ? 'Pause' : 'Start';
+    });
+}
+
+if (btnResetSim) {
+    btnResetSim.addEventListener('click', () => {
+        resetSimulationRun();
+        setSimStatus('Simulation reset.');
+    });
+}
+
+if (btnExitSim) {
+    btnExitSim.addEventListener('click', () => {
+        toggleSimulationView(false);
+    });
+}
+
 window.addEventListener('resize', () => {
     draw();
+    resizeSimulationViewport();
 });
